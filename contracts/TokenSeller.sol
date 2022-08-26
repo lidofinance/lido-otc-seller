@@ -63,21 +63,17 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
     address public constant CHAINLINK_LDO_ETH = 0x4e844125952D32AcdF339BE976c98E22F6F318dB;
     address public constant CHAINLINK_STETH_ETH = 0x86392dC19c0b719886221c78AB11eb8Cf5c52812;
 
-    struct Quote {
-        string name;
-        uint256 price;
-    }
-
-    function initialize(uint256 slippage) external initializer onlyProxy {
-        _setupRole(DEFAULT_ADMIN_ROLE, _msgSender());
+    function initialize(address initialAdmin, uint256 slippage) external initializer onlyProxy {
+        _setupRole(DEFAULT_ADMIN_ROLE, initialAdmin);
+        _setupRole(ORDER_SETTLE_ROLE, initialAdmin);
+        _setupRole(OPERATOR_ROLE, initialAdmin);
 
         // assing roles for Lido agent
         _setupRole(DEFAULT_ADMIN_ROLE, LIDO_AGENT);
         _setupRole(ORDER_SETTLE_ROLE, LIDO_AGENT);
+        _setupRole(OPERATOR_ROLE, LIDO_AGENT);
 
         _setSlippage(slippage);
-        // StorageSlot.getUint256Slot(_SLIPPAGE_SLOT).value = 200; // 2% Initially;
-        // StorageSlot.getUint256Slot(_UNIV3_POOL_FEE_SLOT).value = 3000; // 0.3% Initially;
     }
 
     function getSlippage() external view returns (uint256) {
