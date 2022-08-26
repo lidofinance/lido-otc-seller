@@ -1,0 +1,12 @@
+{
+  "name": "lido-token-seller",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {},
+  "author": "Lido <info@lido.fi>",
+  "homepage": "https://lido.fi/",
+  "license": "GPL-3.0",
+  "dependencies": {
+    "hardhat": "^2.10.2"
+  }
+}

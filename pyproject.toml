@@ -1,0 +1,30 @@
+[tool.poetry]
+name = "lido-token-seller"
+version = "0.1.0"
+description = "TBD"
+authors = ["Lido dev team"]
+license = "MIT"
+readme = "README.md"
+homepage = "https://lido.fi"
+
+[tool.poetry.dependencies]
+python = ">=3.8,<3.11"
+eth-ape = "^0.4.5"
+ape-solidity = "^0.4.1"
+ape-vyper = "^0.4.0"
+ape-hardhat = "^0.4.2"
+ape-infura = "^0.4.0"
+
+[tool.poetry.dev-dependencies]
+black = "~22.6.0"
+pre-commit = "~2.19.0"
+vyper = "~0.3.6"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 120
+target-version = ['py310']
+include = '\.pyi?$'
