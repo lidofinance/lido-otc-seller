@@ -42,7 +42,7 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
     address public constant GP_V2_SETTLEMENT = 0x9008D19f58AAbD9eD0D60971565AA8510560ab41;
 
     /// Token addressess
-    address public constant TOKEN_ETH = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+    address private constant TOKEN_ETH = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
     IERC20 public constant TOKEN_WETH = IERC20(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
     IERC20 public constant TOKEN_DAI = IERC20(0x6B175474E89094C44Da98b954EedeAC495271d0F);
     IERC20 public constant TOKEN_USDC = IERC20(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48);
