@@ -25,6 +25,8 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
     bytes32 public constant ORDER_SETTLE_ROLE = keccak256("ORDER_SETTLE_ROLE");
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
 
+    uint32 public constant MIN_ORDER_VALID_TIME = 86400; // 24h
+
     uint256 private constant MAX_BPS = 10_000;
     // The maximum allowable slippage that can be set
     uint256 private constant MAX_SLIPPAGE = 500; // 5%
@@ -32,12 +34,7 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
     // Stores current allowed slippage value, value is set in BPS
     bytes32 private constant _SLIPPAGE_SLOT = keccak256("lido.TokenSeller.slippage");
 
-    /// @dev The EIP-712 domain separator
-    /// @notice Copy pasted from Ethereum mainnet CowSwap settlement contract
-    ///         See https://github.com/cowprotocol/contracts/blob/main/src/contracts/mixins/GPv2Signing.sol
-    bytes32 public constant domainSeparator = 0xc078f884a2676e1345748b1feace7b0abee5d00ecadb6e574dcdd109a63e8943;
-
-    address public immutable LIDO_AGENT = 0x3e40D73EB977Dc6a537aF587D48316feE66E9C8c;
+    address payable public constant LIDO_AGENT = payable(0x3e40D73EB977Dc6a537aF587D48316feE66E9C8c);
 
     /// Contract we give allowance to perform swaps
     address public constant GP_V2_VAULT_RELAYER = 0xC92E8bdf79f0507f65a392b0ab4667716BFE0110;
@@ -63,12 +60,15 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
     address public constant CHAINLINK_LDO_ETH = 0x4e844125952D32AcdF339BE976c98E22F6F318dB;
     address public constant CHAINLINK_STETH_ETH = 0x86392dC19c0b719886221c78AB11eb8Cf5c52812;
 
-    function initialize(address initialAdmin, uint256 slippage) external initializer onlyProxy {
-        _setupRole(DEFAULT_ADMIN_ROLE, initialAdmin);
-        _setupRole(ORDER_SETTLE_ROLE, initialAdmin);
-        _setupRole(OPERATOR_ROLE, initialAdmin);
+    /// @dev The EIP-712 domain separator
+    /// @notice Copy pasted from Ethereum mainnet CowSwap settlement contract
+    ///         See https://github.com/cowprotocol/contracts/blob/main/src/contracts/mixins/GPv2Signing.sol
+    bytes32 public immutable domainSeparator = 0xc078f884a2676e1345748b1feace7b0abee5d00ecadb6e574dcdd109a63e8943;
 
-        // assing roles for Lido agent
+    function initialize(uint256 slippage) external initializer onlyProxy {
+        _setupRole(DEFAULT_ADMIN_ROLE, _msgSender());
+
+        // assing roles for Lido Agent
         _setupRole(DEFAULT_ADMIN_ROLE, LIDO_AGENT);
         _setupRole(ORDER_SETTLE_ROLE, LIDO_AGENT);
         _setupRole(OPERATOR_ROLE, LIDO_AGENT);
@@ -96,11 +96,11 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
     function swapETHForDAI(GPv2Order.Data calldata orderData, bytes memory orderUid) external payable {
         require(checkOrderETHForDAI(orderData, orderUid), "TokenSeller: order check failed");
         require(address(this).balance >= orderData.sellAmount, "TokenSeller: not enough ETH balance");
-        
+
         // convert ETH to WETH
         IWETH(address(TOKEN_WETH)).deposit{value: orderData.sellAmount}();
 
-        /// NOTE: also checks for msg.sender has SIGN_ROLE
+        /// NOTE: _settleOrder also checks for msg.sender has SIGN_ROLE
         _settleOrder(orderData, orderUid);
     }
 
@@ -133,8 +133,8 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
         bytes memory derivedOrderID = getOrderUid(orderData);
         require(keccak256(derivedOrderID) == keccak256(orderUid), "TokenSeller: orderUid missmatch");
 
-        require(orderData.validTo > block.timestamp, "TokenSeller: wrong order validTo");
-        require(orderData.receiver == address(LIDO_AGENT), "TokenSeller: wrong order receiver");
+        require(orderData.validTo > block.timestamp + MIN_ORDER_VALID_TIME, "TokenSeller: order validity time is too short");
+        require(orderData.receiver == address(this), "TokenSeller: wrong order receiver");
         require(orderData.kind == GPv2Order.KIND_SELL, "TokenSeller: wrong order kind");
         require(orderData.sellTokenBalance == GPv2Order.BALANCE_ERC20, "TokenSeller: wrong order sellTokenBalance");
         require(orderData.buyTokenBalance == GPv2Order.BALANCE_ERC20, "TokenSeller: wrong order buyTokenBalance");
@@ -153,7 +153,9 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
 
         uint256 swapAmountOut = (orderData.sellAmount * bestPrice * (MAX_BPS - slippage)) / MAX_BPS / 10**tokenSellDecimals;
         // chainlinkPrice is normilized to 1e18 decimals, so we need to adjust it
-        uint256 chainlinkAmountOut = (orderData.sellAmount * chainlinkPrice * (MAX_BPS - slippage)) / MAX_BPS / 10**(18 + tokenSellDecimals - tokenBuyDecimals);
+        uint256 chainlinkAmountOut = (orderData.sellAmount * chainlinkPrice * (MAX_BPS - slippage)) /
+            MAX_BPS /
+            10**(18 + tokenSellDecimals - tokenBuyDecimals);
 
         // Require that Cowswap is offering a better price or matching
         return (swapAmountOut <= orderData.buyAmount && chainlinkAmountOut <= orderData.buyAmount);

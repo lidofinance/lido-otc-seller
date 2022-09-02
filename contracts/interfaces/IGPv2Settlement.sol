@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-/// @title Minified CowSwap GPv2Settlement interface
+/// @dev Minified CowSwap GPv2Settlement interface
 interface IGPv2Settlement {
     /// @dev Sets a presignature for the specified order UID.
     ///
@@ -11,4 +11,6 @@ interface IGPv2Settlement {
     function preSignature(bytes calldata orderUid) external view returns (uint256);
 
     function domainSeparator() external view returns (bytes32);
+
+    function filledAmount(bytes calldata orderUid) external view returns (uint256);
 }
