@@ -1,0 +1,15 @@
+dependencies:
+  - OpenZeppelin/openzeppelin-contracts@4.7.3
+
+networks:
+  default: mainnet-fork
+
+compiler:  
+  evm_version: istanbul
+  minify_source: false
+  solc:
+    version: 0.8.15
+    optimize: true
+    runs: 200
+    remappings:
+      - "@openzeppelin=OpenZeppelin/openzeppelin-contracts@4.7.3"
