@@ -16,6 +16,7 @@ import {ICurveSynthSwap} from "./interfaces/ICurveSynthSwap.sol";
 import {IChainlinkPriceFeedV3} from "./interfaces/IChainlinkPriceFeedV3.sol";
 import {IGPv2Settlement} from "./interfaces/IGPv2Settlement.sol";
 import {IWETH} from "./interfaces/IWETH.sol";
+import {IVault} from "./interfaces/IVault.sol";
 
 contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnumerable, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -65,6 +66,31 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
     ///         See https://github.com/cowprotocol/contracts/blob/main/src/contracts/mixins/GPv2Signing.sol
     bytes32 public immutable domainSeparator = 0xc078f884a2676e1345748b1feace7b0abee5d00ecadb6e574dcdd109a63e8943;
 
+    enum OrderState {
+        None,
+        Settled,
+        Completed,
+        Canceled
+    }
+
+    struct Order {
+        OrderState state;
+        IERC20 sellToken;
+        IERC20 buyToken;
+        uint256 sellAmount;
+        uint256 buyAmount;
+    }
+
+    // events
+    event OrderSettled(bytes indexed orderUid);
+    event OrderCompleted(bytes indexed orderUid);
+    event OrderCanceled(bytes indexed orderUid);
+
+    /// @dev orders data
+    mapping(bytes => Order) private _orders;
+    /// @dev total reserved amount per token
+    mapping(address => uint256) private _reservedAmounts;
+
     function initialize(uint256 slippage) external initializer onlyProxy {
         _setupRole(DEFAULT_ADMIN_ROLE, _msgSender());
 
@@ -86,21 +112,29 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
         _setSlippage(newSlippage);
     }
 
+    function getOrder(bytes memory orderUid) external view returns (Order memory order) {
+        return _orders[orderUid];
+    }
+
+    function getSellTokenReservedAmount(address tokenAddress) external view returns (uint256) {
+        return _reservedAmounts[tokenAddress];
+    }
+
     function _setSlippage(uint256 newSlippage) internal {
         require(newSlippage < MAX_SLIPPAGE, "TokenSeller: MAX_SLIPPAGE exceeded");
         StorageSlot.getUint256Slot(_SLIPPAGE_SLOT).value = newSlippage;
     }
 
     /// @dev Main entrypoint: Swap ETH -> DAI
-    /// @notice Must be called only from address with SIGN_ROLE assigned, i.e. Lido Agent
+    /// @notice Must be called only from address with ORDER_SETTLE_ROLE assigned, i.e. Lido Agent
     function swapETHForDAI(GPv2Order.Data calldata orderData, bytes memory orderUid) external payable {
         require(checkOrderETHForDAI(orderData, orderUid), "TokenSeller: order check failed");
         require(address(this).balance >= orderData.sellAmount, "TokenSeller: not enough ETH balance");
 
-        // convert ETH to WETH
+        // wrap ETH to WETH
         IWETH(address(TOKEN_WETH)).deposit{value: orderData.sellAmount}();
 
-        /// NOTE: _settleOrder also checks for msg.sender has SIGN_ROLE
+        /// NOTE: _settleOrder also checks for msg.sender has ORDER_SETTLE_ROLE
         _settleOrder(orderData, orderUid);
     }
 
@@ -135,6 +169,7 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
 
         require(orderData.validTo > block.timestamp + MIN_ORDER_VALID_TIME, "TokenSeller: order validity time is too short");
         require(orderData.receiver == address(this), "TokenSeller: wrong order receiver");
+        require(orderData.partiallyFillable == false, "TokenSeller: partially fill not allowed");
         require(orderData.kind == GPv2Order.KIND_SELL, "TokenSeller: wrong order kind");
         require(orderData.sellTokenBalance == GPv2Order.BALANCE_ERC20, "TokenSeller: wrong order sellTokenBalance");
         require(orderData.buyTokenBalance == GPv2Order.BALANCE_ERC20, "TokenSeller: wrong order buyTokenBalance");
@@ -249,23 +284,104 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
         return 10**36 / getChainlinkDirectPrice(priceFeed);
     }
 
+    /// @dev Complete filled order
+    /// @notice Can be called by anyone
+    function completeOrder(bytes memory orderUid) external {
+        _completeOrder(orderUid);
+    }
+
+    /// @dev Cancel settled but not yet filled order
+    /// @notice Caller must be assigned OPERATOR_ROLE 
+    function cancelOrder(bytes memory orderUid) external {
+        _cancelOrder(orderUid);
+    }
+
     /// @dev This is the function you want to use to perform a swap on Cowswap via this smart contract
     function _settleOrder(GPv2Order.Data calldata orderData, bytes memory orderUid) internal nonReentrant {
         _checkRole(ORDER_SETTLE_ROLE);
+        require(_orders[orderUid].state == OrderState.None, "TokenSeller: order already settled");
 
         // Because swap is looking good, check we have the amount, then give allowance to the Cowswap Router
         orderData.sellToken.safeApprove(GP_V2_VAULT_RELAYER, 0); // Set to 0 just in case
         orderData.sellToken.safeApprove(GP_V2_VAULT_RELAYER, orderData.sellAmount);
 
         // Once allowance is set, let's setPresignature and the order will happen
-        //setPreSignature
         IGPv2Settlement(GP_V2_SETTLEMENT).setPreSignature(orderUid, true);
+
+        // reserving amount of tokens for sale
+        uint256 reservedSellTokenAmount = _reservedAmounts[address(orderData.sellToken)];
+        // just in case
+        require(
+            orderData.sellToken.balanceOf(address(this)) >= reservedSellTokenAmount + orderData.sellAmount,
+            "TokenSeller: wrong sellToken balance"
+        );
+
+        _reservedAmounts[address(orderData.sellToken)] = reservedSellTokenAmount + orderData.sellAmount;
+        _orders[orderUid] = Order(OrderState.Settled, orderData.sellToken, orderData.buyToken, orderData.sellAmount, orderData.buyAmount);
+
+        emit OrderSettled(orderUid);
+    }
+
+    function _completeOrder(bytes memory orderUid) internal nonReentrant {
+        Order memory order = _orders[orderUid];
+        require(order.state == OrderState.Settled, "TokenSeller: order not yet settled");
+        uint256 soldAmount = IGPv2Settlement(GP_V2_SETTLEMENT).filledAmount(orderUid);
+        require(soldAmount >= order.sellAmount, "TokenSeller: order not yet filled");
+
+        // make sure the token balance on the contract is enough (assuming the purchased tokens should be on the contract balance)
+        require(
+            order.buyToken.balanceOf(address(this)) >= _reservedAmounts[address(order.buyToken)] + order.buyAmount,
+            "TokenSeller: insufficient buyToken balance"
+        );
+
+        // release the corresponding reserved amount of tokens for sale, because they are already sold
+        uint256 reservedSellTokenAmount = _reservedAmounts[address(order.sellToken)];
+        // check contract balance
+        require(
+            order.sellToken.balanceOf(address(this)) + order.sellAmount >= reservedSellTokenAmount,
+            "TokenSeller: wrong sellToken balance"
+        );
+
+        // forward the received token amunt to the DAO treasury contract
+        order.buyToken.approve(LIDO_AGENT, order.buyAmount);
+        IVault(LIDO_AGENT).deposit(address(order.buyToken), order.buyAmount);
+
+        _reservedAmounts[address(order.sellToken)] = reservedSellTokenAmount - order.sellAmount;
+        _orders[orderUid].state = OrderState.Completed;
+
+        emit OrderCompleted(orderUid);
     }
 
     /// @dev Allows to cancel a cowswap order perhaps if it took too long or was with invalid parameters
-    /// @notice This function performs no checks, there's a high change it will revert if you send it with fluff parameters
+    /// @notice This function performs no checks, there's a high chance it will revert if you send it with fluff parameters
     function _cancelOrder(bytes memory orderUid) internal nonReentrant {
         _checkRole(OPERATOR_ROLE);
+        Order memory order = _orders[orderUid];
+        require(order.state == OrderState.Settled, "TokenSeller: wrong order state");
         IGPv2Settlement(GP_V2_SETTLEMENT).setPreSignature(orderUid, false);
+
+        // release the corresponding reserved amount of tokens for sale
+        uint256 reservedSellTokenAmount = _reservedAmounts[address(order.sellToken)];
+        // check contract balance
+        require(
+            order.sellToken.balanceOf(address(this)) + order.sellAmount >= reservedSellTokenAmount,
+            "TokenSeller: wrong sellToken balance"
+        );
+
+        // forward the unsold token amunt back to the DAO treasury contract
+        if (address(order.sellToken) == address(TOKEN_WETH)) {
+            // unwrap WETH to ETH
+            IWETH(address(TOKEN_WETH)).withdraw(order.sellAmount);
+            // depositing ETH via sending ETH directly to the Vault
+            LIDO_AGENT.call{value: order.sellAmount}("");
+        } else {
+            order.sellToken.approve(LIDO_AGENT, order.sellAmount);
+            IVault(LIDO_AGENT).deposit(address(order.sellToken), order.sellAmount);
+        }
+
+        _reservedAmounts[address(order.sellToken)] = reservedSellTokenAmount - order.sellAmount;
+        _orders[orderUid].state = OrderState.Canceled;
+
+        emit OrderCanceled(orderUid);
     }
 }
