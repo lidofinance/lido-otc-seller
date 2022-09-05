@@ -26,8 +26,6 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
     bytes32 public constant ORDER_SETTLE_ROLE = keccak256("ORDER_SETTLE_ROLE");
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
 
-    uint32 public constant MIN_ORDER_VALID_TIME = 86400; // 24h
-
     uint256 private constant MAX_BPS = 10_000;
     // The maximum allowable slippage that can be set
     uint256 private constant MAX_SLIPPAGE = 500; // 5%
@@ -167,7 +165,7 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
         bytes memory derivedOrderID = getOrderUid(orderData);
         require(keccak256(derivedOrderID) == keccak256(orderUid), "TokenSeller: orderUid missmatch");
 
-        require(orderData.validTo > block.timestamp + MIN_ORDER_VALID_TIME, "TokenSeller: order validity time is too short");
+        require(orderData.validTo > block.timestamp, "TokenSeller: wrong order validTo");
         require(orderData.receiver == address(this), "TokenSeller: wrong order receiver");
         require(orderData.partiallyFillable == false, "TokenSeller: partially fill not allowed");
         require(orderData.kind == GPv2Order.KIND_SELL, "TokenSeller: wrong order kind");
