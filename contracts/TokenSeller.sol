@@ -28,7 +28,7 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
 
     uint256 private constant MAX_BPS = 10_000;
     // The maximum allowable slippage that can be set
-    uint256 private constant MAX_SLIPPAGE = 500; // 5%
+    uint256 public constant MAX_SLIPPAGE = 500; // 5%
 
     // Stores current allowed slippage value, value is set in BPS
     bytes32 private constant _SLIPPAGE_SLOT = keccak256("lido.TokenSeller.slippage");
@@ -80,9 +80,9 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
     }
 
     // events
-    event OrderSettled(bytes indexed orderUid);
-    event OrderCompleted(bytes indexed orderUid);
-    event OrderCanceled(bytes indexed orderUid);
+    event OrderSettled(bytes orderUid);
+    event OrderCompleted(bytes orderUid);
+    event OrderCanceled(bytes orderUid);
 
     /// @dev orders data
     mapping(bytes => Order) private _orders;
@@ -100,6 +100,12 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
         _setSlippage(slippage);
     }
 
+    receive() external payable {}
+
+    fallback() external {
+        revert();
+    }
+
     function getSlippage() external view returns (uint256) {
         return StorageSlot.getUint256Slot(_SLIPPAGE_SLOT).value;
     }
@@ -110,7 +116,7 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
         _setSlippage(newSlippage);
     }
 
-    function getOrder(bytes memory orderUid) external view returns (Order memory order) {
+    function getOrder(bytes calldata orderUid) external view returns (Order memory order) {
         return _orders[orderUid];
     }
 
@@ -125,7 +131,7 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
 
     /// @dev Main entrypoint: Swap ETH -> DAI
     /// @notice Must be called only from address with ORDER_SETTLE_ROLE assigned, i.e. Lido Agent
-    function swapETHForDAI(GPv2Order.Data calldata orderData, bytes memory orderUid) external payable {
+    function settleOrderETHForDAI(GPv2Order.Data calldata orderData, bytes calldata orderUid) external payable {
         require(checkOrderETHForDAI(orderData, orderUid), "TokenSeller: order check failed");
         require(address(this).balance >= orderData.sellAmount, "TokenSeller: not enough ETH balance");
 
@@ -136,7 +142,7 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
         _settleOrder(orderData, orderUid);
     }
 
-    function checkOrderETHForDAI(GPv2Order.Data calldata orderData, bytes memory orderUid) public view returns (bool) {
+    function checkOrderETHForDAI(GPv2Order.Data calldata orderData, bytes calldata orderUid) public view returns (bool) {
         require(orderData.sellToken == TOKEN_WETH, "TokenSeller: wrong WETH token");
         require(orderData.buyToken == TOKEN_DAI, "TokenSeller: wrong DAI token");
 
@@ -145,6 +151,7 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
         return checkOrder(orderData, orderUid, chainlinkPrice);
     }
 
+    /// @dev Calculates OrderUid from Order Data
     function getOrderUid(GPv2Order.Data calldata orderData) public view returns (bytes memory) {
         // Allocated
         bytes memory orderUid = new bytes(GPv2Order.UID_LENGTH);
@@ -154,9 +161,14 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
         return orderUid;
     }
 
+    /// @dev General order data checks.
+    /// @notice receiver is the seller contract itself, since the Vault Agent
+    ///         cannot detect the direct transfer of the token, so it is necessary to complete
+    ///         the execution of the sale on the Seller contract and transfer the tokens
+    ///         through the .deposit () method
     function checkOrder(
         GPv2Order.Data calldata orderData,
-        bytes memory orderUid,
+        bytes calldata orderUid,
         uint256 chainlinkPrice
     ) public view returns (bool) {
         // Verify we get the same ID
@@ -166,6 +178,7 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
         require(keccak256(derivedOrderID) == keccak256(orderUid), "TokenSeller: orderUid missmatch");
 
         require(orderData.validTo > block.timestamp, "TokenSeller: wrong order validTo");
+        // NOTE: receiver is the seller contract itself, since the Vault Agent cannot detect the direct transfer of the token, so it is necessary to complete the execution of the sale on the Seller contract and transfer the tokens through the .deposit () method
         require(orderData.receiver == address(this), "TokenSeller: wrong order receiver");
         require(orderData.partiallyFillable == false, "TokenSeller: partially fill not allowed");
         require(orderData.kind == GPv2Order.KIND_SELL, "TokenSeller: wrong order kind");
@@ -284,18 +297,18 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
 
     /// @dev Complete filled order
     /// @notice Can be called by anyone
-    function completeOrder(bytes memory orderUid) external {
+    function completeOrder(bytes calldata orderUid) external {
         _completeOrder(orderUid);
     }
 
     /// @dev Cancel settled but not yet filled order
-    /// @notice Caller must be assigned OPERATOR_ROLE 
-    function cancelOrder(bytes memory orderUid) external {
+    /// @notice Caller must be assigned OPERATOR_ROLE
+    function cancelOrder(bytes calldata orderUid) external {
         _cancelOrder(orderUid);
     }
 
     /// @dev This is the function you want to use to perform a swap on Cowswap via this smart contract
-    function _settleOrder(GPv2Order.Data calldata orderData, bytes memory orderUid) internal nonReentrant {
+    function _settleOrder(GPv2Order.Data calldata orderData, bytes calldata orderUid) internal nonReentrant {
         _checkRole(ORDER_SETTLE_ROLE);
         require(_orders[orderUid].state == OrderState.None, "TokenSeller: order already settled");
 
@@ -320,7 +333,7 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
         emit OrderSettled(orderUid);
     }
 
-    function _completeOrder(bytes memory orderUid) internal nonReentrant {
+    function _completeOrder(bytes calldata orderUid) internal nonReentrant {
         Order memory order = _orders[orderUid];
         require(order.state == OrderState.Settled, "TokenSeller: order not yet settled");
         uint256 soldAmount = IGPv2Settlement(GP_V2_SETTLEMENT).filledAmount(orderUid);
@@ -352,7 +365,7 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
 
     /// @dev Allows to cancel a cowswap order perhaps if it took too long or was with invalid parameters
     /// @notice This function performs no checks, there's a high chance it will revert if you send it with fluff parameters
-    function _cancelOrder(bytes memory orderUid) internal nonReentrant {
+    function _cancelOrder(bytes calldata orderUid) internal nonReentrant {
         _checkRole(OPERATOR_ROLE);
         Order memory order = _orders[orderUid];
         require(order.state == OrderState.Settled, "TokenSeller: wrong order state");

@@ -21,34 +21,39 @@ contract Setup {
         Finilized
     }
 
-    struct DeployState {
+    struct SetupState {
+        SetupStatus status;
+        address deployer;
         address impl;
         address payable proxy;
     }
 
-    address public _deployer;
-    SetupStatus public _status;
-    DeployState public _state;
+    SetupState private _setupState;
 
     function _checkStatus(SetupStatus status) private view {
-        require(_status == status, "Wrong setup status");
+        require(_setupState.status == status, "Wrong setup status");
     }
 
     modifier updateStatus(SetupStatus status) {
         _checkStatus(status);
         _;
-        _status = SetupStatus(uint8(status) + 1);
+        _setupState.status = SetupStatus(uint8(status) + 1);
     }
 
     modifier onlyDeployer() {
-        require(msg.sender == _deployer, "Only deployer allowed");
+        require(msg.sender == _setupState.deployer, "Only deployer allowed");
         _;
     }
 
     constructor(address deployer) {
         require(deployer != address(0));
-        _deployer = deployer;
+        _setupState.deployer = deployer;
         _deploy();
+    }
+
+
+    function getSetupState() external view  returns(SetupState memory state) {
+        return _setupState;
     }
 
     function deploy() external onlyDeployer {
@@ -64,7 +69,7 @@ contract Setup {
     }
 
     function _deploy() internal updateStatus(SetupStatus.None) {
-        DeployState memory state;
+        SetupState memory state = _setupState;
 
         state.impl = address(new TokenSeller());
 
@@ -76,20 +81,20 @@ contract Setup {
         TokenSeller proxy = TokenSeller(state.proxy);
 
         // grant temporary right for test
-        proxy.grantRole(ORDER_SETTLE_ROLE, _deployer);
-        proxy.grantRole(OPERATOR_ROLE, _deployer);
+        proxy.grantRole(ORDER_SETTLE_ROLE, _setupState.deployer);
+        proxy.grantRole(OPERATOR_ROLE, _setupState.deployer);
 
-        _state = state;
+        _setupState = state;
     }
 
     function _finalize() internal updateStatus(SetupStatus.Deployed) {
-        DeployState memory state = _state;
+        SetupState memory state = _setupState;
 
         TokenSeller proxy = TokenSeller(state.proxy);
 
         // remove temporary access rights
-        proxy.revokeRole(ORDER_SETTLE_ROLE, _deployer);
-        proxy.revokeRole(OPERATOR_ROLE, _deployer);
+        proxy.revokeRole(ORDER_SETTLE_ROLE, _setupState.deployer);
+        proxy.revokeRole(OPERATOR_ROLE, _setupState.deployer);
         proxy.renounceRole(DEFAULT_ADMIN_ROLE, address(this));
 
         // transfer proxy admin to Lido Agent
@@ -99,7 +104,7 @@ contract Setup {
     function _check() internal view returns (bool) {
         _checkStatus(SetupStatus.Finilized);
 
-        DeployState memory state = _state;
+        SetupState memory state = _setupState;
         TokenSeller proxy = TokenSeller(state.proxy);
 
         // check: Agent is only roles holder
