@@ -5,6 +5,7 @@ coverage.json
 typechain
 typechain-types
 **/__pycache__
+.pytest_cache
 .vscode
 .build
 **/.cache
