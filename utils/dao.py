@@ -23,14 +23,20 @@ def encode_token_transfer(token_address, recipient, amount, reference, finance):
     return (finance.address, finance.newImmediatePayment.encode_input(token_address, recipient, amount, reference))
 
 
+def encode_agent_execute(target, call_value, call_data, agent):
+    return (agent.address, agent.execute.encode_input(target, call_value, call_data))
+
+
 def encode_settle_order(
-    sell_token_address,
-    buy_token_address,
-    receiver_address,
+    sell_token,
+    buy_token,
+    receiver,
     sell_amount,
     buy_amount,
     valid_to,
+    appData,
     fee_amount,
+    partiallyFillable,
     orderUid,
     seller,
 ):
@@ -49,15 +55,13 @@ def encode_settle_order(
     #     bytes32 buyTokenBalance;
     # }
 
-    partiallyFillable = False
-    appData = "0x0000000000000000000000000000000000000000000000000000000000000000"
     return (
         seller.address,
-        seller.swapETHForDAI.encode_input(
+        seller.settleOrderETHForDAI.encode_input(
             [
-                sell_token_address,
-                buy_token_address,
-                receiver_address,
+                sell_token,
+                buy_token,
+                receiver,
                 sell_amount,
                 buy_amount,
                 valid_to,

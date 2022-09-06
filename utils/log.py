@@ -49,3 +49,20 @@ def error(text, value=None):
         result += ": " + highlight(value, color_hl)
 
     print(result)
+
+
+
+def brief(text, value = None):
+    result = highlight('[>>>>] ', color_yellow) + text
+
+    if value is not None:
+        result += ': ' + highlight(value, color_hl)
+
+    print()
+    print(result)
+    print()
+
+
+def assert_equals(desc, actual, expected):
+    assert actual == expected, f"{desc}: expected {expected} bot got {actual}"
+    okay(desc, actual)
