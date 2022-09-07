@@ -198,7 +198,7 @@ def test_complete_order(accounts, settled_order, sell_token, buy_token, seller_d
     (_, orderUid, tx) = settled_order
 
     agentBalanceDAI = dai_token.balanceOf(lido_dao_agent_address)
-    with reverts("OTCSeller: order not yet filled"):
+    with reverts("Order not yet filled"):
         seller_dev.completeOrder(orderUid, {"from": accounts[0]})
 
     simulate_order_fulfill(orderUid)

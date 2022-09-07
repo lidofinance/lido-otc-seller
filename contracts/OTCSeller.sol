@@ -332,9 +332,9 @@ contract OTCSeller is Initializable, ERC1967Implementation, AccessControlEnumera
     /// @dev Function to finalize a swap and transfer funds to Lido Agent
     function _completeOrder(bytes calldata orderUid) internal nonReentrant {
         Order memory order = _orders[orderUid];
-        require(order.state == OrderState.Settled, "order not yet settled");
+        require(order.state == OrderState.Settled, "Order not yet settled");
         uint256 soldAmount = IGPv2Settlement(GP_V2_SETTLEMENT).filledAmount(orderUid);
-        require(soldAmount >= order.sellAmount, "order not yet filled");
+        require(soldAmount >= order.sellAmount, "Order not yet filled");
 
         // make sure the token balance on the contract is enough (assuming the purchased tokens should be on the contract balance)
         require(order.buyToken.balanceOf(address(this)) >= _reservedAmounts[address(order.buyToken)] + order.buyAmount, "Insufficient buyToken balance");

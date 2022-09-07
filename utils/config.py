@@ -55,13 +55,3 @@ def get_deployer_account(is_live):
     return (
         accounts.load(os.environ["DEPLOYER"]) if is_live else accounts.at(ldo_vote_executors_for_tests[0], force=True)
     )
-
-
-def prompt_bool():
-    choice = input().lower()
-    if choice in {"yes", "y"}:
-        return True
-    elif choice in {"no", "n"}:
-        return False
-    else:
-        sys.stdout.write("Please respond with 'yes' or 'no'")

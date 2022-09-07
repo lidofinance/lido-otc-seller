@@ -7,28 +7,27 @@
 ```shell
 poetry shell
 poetry install
-npm install
+
 export WEB3_INFURA_PROJECT_ID=<your infura project id>
+export ETHERSCAN_TOKEN=<your etherscan api key>
 ```
 
 ## Run tests
 
+It' better to run local mainnet fork node in separate terminal window.
+
 ```shell
-ape test -s --network :mainnet-fork
+brownie console --network mainnet-fork
 ```
 
+Then run all tests
+
+```shell
+brownie test -s 
+```
 
 ## Deployment
 
-> **NB:** The deployment is done via Ape console because this contract deployment is trivial and because Ape doesn't provide the capability to specify deployer account in a script.
-
-Get sure your account is imported to Ape: `ape accounts list`.
-
-Start Ape console for the target network and provider, e. g.
-```bash
-ape console --network :mainnet:infura
-```
-
-Deploy from the console:
+Get sure your account is imported to Brownie: `brownie accounts list`.
 
 ...TBD...
