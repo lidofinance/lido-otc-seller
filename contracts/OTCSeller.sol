@@ -18,7 +18,7 @@ import {IGPv2Settlement} from "./interfaces/IGPv2Settlement.sol";
 import {IWETH} from "./interfaces/IWETH.sol";
 import {IVault} from "./interfaces/IVault.sol";
 
-contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnumerable, ReentrancyGuard {
+contract OTCSeller is Initializable, ERC1967Implementation, AccessControlEnumerable, ReentrancyGuard {
     using SafeERC20 for IERC20;
     using GPv2Order for GPv2Order.Data;
     using GPv2Order for bytes;
@@ -28,10 +28,10 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
 
     uint256 private constant MAX_BPS = 10_000;
     // The maximum allowable slippage that can be set
-    uint256 public constant MAX_SLIPPAGE = 500; // 5%
+    uint256 private constant MAX_SLIPPAGE = 500; // 5%
 
     // Stores current allowed slippage value, value is set in BPS
-    bytes32 private constant _SLIPPAGE_SLOT = keccak256("lido.TokenSeller.slippage");
+    bytes32 private constant _SLIPPAGE_SLOT = keccak256("lido.OTCSeller.slippage");
 
     address payable public constant LIDO_AGENT = payable(0x3e40D73EB977Dc6a537aF587D48316feE66E9C8c);
 
@@ -125,15 +125,15 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
     }
 
     function _setSlippage(uint256 newSlippage) internal {
-        require(newSlippage < MAX_SLIPPAGE, "TokenSeller: MAX_SLIPPAGE exceeded");
+        require(newSlippage < MAX_SLIPPAGE, "MAX_SLIPPAGE exceeded");
         StorageSlot.getUint256Slot(_SLIPPAGE_SLOT).value = newSlippage;
     }
 
     /// @dev Main entrypoint: Swap ETH -> DAI
     /// @notice Must be called only from address with ORDER_SETTLE_ROLE assigned, i.e. Lido Agent
     function settleOrderETHForDAI(GPv2Order.Data calldata orderData, bytes calldata orderUid) external payable {
-        require(checkOrderETHForDAI(orderData, orderUid), "TokenSeller: order check failed");
-        require(address(this).balance >= orderData.sellAmount, "TokenSeller: not enough ETH balance");
+        require(checkOrderETHForDAI(orderData, orderUid), "Order check failed");
+        require(address(this).balance >= orderData.sellAmount, "Not enough ETH balance");
 
         // wrap ETH to WETH
         IWETH(address(TOKEN_WETH)).deposit{value: orderData.sellAmount}();
@@ -142,9 +142,10 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
         _settleOrder(orderData, orderUid);
     }
 
+    /// @dev Check correctness of the ETH -> DAI swap order
     function checkOrderETHForDAI(GPv2Order.Data calldata orderData, bytes calldata orderUid) public view returns (bool) {
-        require(orderData.sellToken == TOKEN_WETH, "TokenSeller: wrong WETH token");
-        require(orderData.buyToken == TOKEN_DAI, "TokenSeller: wrong DAI token");
+        require(orderData.sellToken == TOKEN_WETH, "Wrong WETH token");
+        require(orderData.buyToken == TOKEN_DAI, "Wrong DAI token");
 
         // get Chainlink DAI/ETH price
         uint256 chainlinkPrice = getChainlinkDirectPrice(CHAINLINK_DAI_ETH);
@@ -175,18 +176,18 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
         // NOTE: technically superfluous as we could just derive the id and setPresignature with that
         // But nice for internal testing
         bytes memory derivedOrderID = getOrderUid(orderData);
-        require(keccak256(derivedOrderID) == keccak256(orderUid), "TokenSeller: orderUid missmatch");
+        require(keccak256(derivedOrderID) == keccak256(orderUid), "orderUid missmatch");
 
-        require(orderData.validTo > block.timestamp, "TokenSeller: wrong order validTo");
+        require(orderData.validTo > block.timestamp, "Wrong order validTo");
         // NOTE: receiver is the seller contract itself, since the Vault Agent cannot detect the direct transfer of the token, so it is necessary to complete the execution of the sale on the Seller contract and transfer the tokens through the .deposit () method
-        require(orderData.receiver == address(this), "TokenSeller: wrong order receiver");
-        require(orderData.partiallyFillable == false, "TokenSeller: partially fill not allowed");
-        require(orderData.kind == GPv2Order.KIND_SELL, "TokenSeller: wrong order kind");
-        require(orderData.sellTokenBalance == GPv2Order.BALANCE_ERC20, "TokenSeller: wrong order sellTokenBalance");
-        require(orderData.buyTokenBalance == GPv2Order.BALANCE_ERC20, "TokenSeller: wrong order buyTokenBalance");
+        require(orderData.receiver == address(this), "Wrong order receiver");
+        require(orderData.partiallyFillable == false, "Partially fill not allowed");
+        require(orderData.kind == GPv2Order.KIND_SELL, "Wrong order kind");
+        require(orderData.sellTokenBalance == GPv2Order.BALANCE_ERC20, "Wrong order sellTokenBalance");
+        require(orderData.buyTokenBalance == GPv2Order.BALANCE_ERC20, "Wrong order buyTokenBalance");
 
         // TODO: This should be done by using a gas cost oracle (see Chainlink)
-        require(orderData.feeAmount <= orderData.sellAmount / 10, "TokenSeller: order fee to high"); // Fee can be at most 1/10th of order
+        require(orderData.feeAmount <= orderData.sellAmount / 10, "Order fee to high"); // Fee can be at most 1/10th of order
 
         // Check the price we're agreeing to
         uint256 slippage = StorageSlot.getUint256Slot(_SLIPPAGE_SLOT).value;
@@ -199,9 +200,7 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
 
         uint256 swapAmountOut = (orderData.sellAmount * bestPrice * (MAX_BPS - slippage)) / MAX_BPS / 10**tokenSellDecimals;
         // chainlinkPrice is normilized to 1e18 decimals, so we need to adjust it
-        uint256 chainlinkAmountOut = (orderData.sellAmount * chainlinkPrice * (MAX_BPS - slippage)) /
-            MAX_BPS /
-            10**(18 + tokenSellDecimals - tokenBuyDecimals);
+        uint256 chainlinkAmountOut = (orderData.sellAmount * chainlinkPrice * (MAX_BPS - slippage)) / MAX_BPS / 10**(18 + tokenSellDecimals - tokenBuyDecimals);
 
         // Require that Cowswap is offering a better price or matching
         return (swapAmountOut <= orderData.buyAmount && chainlinkAmountOut <= orderData.buyAmount);
@@ -286,7 +285,7 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
     function getChainlinkDirectPrice(address priceFeed) public view returns (uint256) {
         uint256 decimals = IChainlinkPriceFeedV3(priceFeed).decimals();
         (, int256 price, , uint256 updated_at, ) = IChainlinkPriceFeedV3(priceFeed).latestRoundData();
-        require(updated_at != 0, "TokenSeller: unexpected price feed answer");
+        require(updated_at != 0, "Unexpected price feed answer");
         return uint256(price) * (10**(18 - decimals));
     }
 
@@ -307,10 +306,10 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
         _cancelOrder(orderUid);
     }
 
-    /// @dev This is the function you want to use to perform a swap on Cowswap via this smart contract
+    /// @dev Function to perform a swap on Cowswap via this smart contract
     function _settleOrder(GPv2Order.Data calldata orderData, bytes calldata orderUid) internal nonReentrant {
         _checkRole(ORDER_SETTLE_ROLE);
-        require(_orders[orderUid].state == OrderState.None, "TokenSeller: order already settled");
+        require(_orders[orderUid].state == OrderState.None, "Order already settled");
 
         // Because swap is looking good, check we have the amount, then give allowance to the Cowswap Router
         orderData.sellToken.safeApprove(GP_V2_VAULT_RELAYER, 0); // Set to 0 just in case
@@ -322,10 +321,7 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
         // reserving amount of tokens for sale
         uint256 reservedSellTokenAmount = _reservedAmounts[address(orderData.sellToken)];
         // just in case
-        require(
-            orderData.sellToken.balanceOf(address(this)) >= reservedSellTokenAmount + orderData.sellAmount,
-            "TokenSeller: wrong sellToken balance"
-        );
+        require(orderData.sellToken.balanceOf(address(this)) >= reservedSellTokenAmount + orderData.sellAmount, "Wrong sellToken balance");
 
         _reservedAmounts[address(orderData.sellToken)] = reservedSellTokenAmount + orderData.sellAmount;
         _orders[orderUid] = Order(OrderState.Settled, orderData.sellToken, orderData.buyToken, orderData.sellAmount, orderData.buyAmount);
@@ -333,25 +329,20 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
         emit OrderSettled(orderUid);
     }
 
+    /// @dev Function to finalize a swap and transfer funds to Lido Agent
     function _completeOrder(bytes calldata orderUid) internal nonReentrant {
         Order memory order = _orders[orderUid];
-        require(order.state == OrderState.Settled, "TokenSeller: order not yet settled");
+        require(order.state == OrderState.Settled, "order not yet settled");
         uint256 soldAmount = IGPv2Settlement(GP_V2_SETTLEMENT).filledAmount(orderUid);
-        require(soldAmount >= order.sellAmount, "TokenSeller: order not yet filled");
+        require(soldAmount >= order.sellAmount, "order not yet filled");
 
         // make sure the token balance on the contract is enough (assuming the purchased tokens should be on the contract balance)
-        require(
-            order.buyToken.balanceOf(address(this)) >= _reservedAmounts[address(order.buyToken)] + order.buyAmount,
-            "TokenSeller: insufficient buyToken balance"
-        );
+        require(order.buyToken.balanceOf(address(this)) >= _reservedAmounts[address(order.buyToken)] + order.buyAmount, "Insufficient buyToken balance");
 
         // release the corresponding reserved amount of tokens for sale, because they are already sold
         uint256 reservedSellTokenAmount = _reservedAmounts[address(order.sellToken)];
         // check contract balance
-        require(
-            order.sellToken.balanceOf(address(this)) + order.sellAmount >= reservedSellTokenAmount,
-            "TokenSeller: wrong sellToken balance"
-        );
+        require(order.sellToken.balanceOf(address(this)) + order.sellAmount >= reservedSellTokenAmount, "Wrong sellToken balance");
 
         // forward the received token amunt to the DAO treasury contract
         order.buyToken.approve(LIDO_AGENT, order.buyAmount);
@@ -368,16 +359,13 @@ contract TokenSeller is Initializable, ERC1967Implementation, AccessControlEnume
     function _cancelOrder(bytes calldata orderUid) internal nonReentrant {
         _checkRole(OPERATOR_ROLE);
         Order memory order = _orders[orderUid];
-        require(order.state == OrderState.Settled, "TokenSeller: wrong order state");
+        require(order.state == OrderState.Settled, "Wrong order state");
         IGPv2Settlement(GP_V2_SETTLEMENT).setPreSignature(orderUid, false);
 
         // release the corresponding reserved amount of tokens for sale
         uint256 reservedSellTokenAmount = _reservedAmounts[address(order.sellToken)];
         // check contract balance
-        require(
-            order.sellToken.balanceOf(address(this)) + order.sellAmount >= reservedSellTokenAmount,
-            "TokenSeller: wrong sellToken balance"
-        );
+        require(order.sellToken.balanceOf(address(this)) + order.sellAmount >= reservedSellTokenAmount, "Wrong sellToken balance");
 
         // forward the unsold token amunt back to the DAO treasury contract
         if (address(order.sellToken) == address(TOKEN_WETH)) {

@@ -2,7 +2,7 @@ import sys
 import pytest
 from brownie import chain, Wei, web3
 import utils.log as log
-from scripts.deploy import start_dao_vote_sell_eth_for_dai, deploy_non_finalized, deploy_finalized
+from scripts.deploy import start_dao_vote_sell_eth_for_dai, deploy_non_finalized, deploy_and_finalize
 
 from utils.cow import KIND_SELL, BALANCE_ERC20, api_get_sell_fee, api_create_order
 
@@ -42,7 +42,7 @@ def setup_and_seller_non_finalized(accounts):
 
 @pytest.fixture(scope="module")
 def setup_and_seller_finalized(accounts):
-    return deploy_finalized({"from": accounts[0]}, deployer=accounts[0])
+    return deploy_and_finalize({"from": accounts[0]}, deployer=accounts[0])
 
 
 @pytest.fixture(scope="module")
@@ -156,20 +156,20 @@ def helpers(accounts, dao_voting, dai_token):
 
 @pytest.fixture(scope="module")
 def deploy_not_finalized_seller(accounts):
-    def deploy(accounts):
+    def do(accounts):
         (setup, seller) = deploy_non_finalized({"from": accounts[0]}, deployer=accounts[0])
         return (setup, seller)
 
-    return deploy
+    return do
 
 
 @pytest.fixture(scope="module")
-def deploy_finalized_seller(accounts):
-    def deploy():
-        (setup, seller) = deploy_finalized({"from": accounts[0]}, deployer=accounts[0])
+def deploy_and_finalize_seller(accounts):
+    def do():
+        (setup, seller) = deploy_and_finalize({"from": accounts[0]}, deployer=accounts[0])
         return (setup, seller)
 
-    return deploy
+    return do
 
 
 @pytest.fixture(scope="module", autouse=True)

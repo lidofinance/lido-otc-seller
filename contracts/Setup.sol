@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.15;
 
-import "./TokenSeller.sol";
+import "./OTCSeller.sol";
 import "./proxy/OssifiableProxy.sol";
 
 contract Setup {
@@ -71,14 +71,14 @@ contract Setup {
     function _deploy() internal updateStatus(SetupStatus.None) {
         SetupState memory state = _setupState;
 
-        state.impl = address(new TokenSeller());
+        state.impl = address(new OTCSeller());
 
         bytes memory data = abi.encodeWithSignature("initialize(uint256)", SLIPPAGE);
         // set Setup contract as temporary proxy admin
         /// @notice roles for Lido Agent are set during initialize call
         state.proxy = payable(new OssifiableProxy(state.impl, address(this), data));
 
-        TokenSeller proxy = TokenSeller(state.proxy);
+        OTCSeller proxy = OTCSeller(state.proxy);
 
         // grant temporary right for test
         proxy.grantRole(ORDER_SETTLE_ROLE, _setupState.deployer);
@@ -90,7 +90,7 @@ contract Setup {
     function _finalize() internal updateStatus(SetupStatus.Deployed) {
         SetupState memory state = _setupState;
 
-        TokenSeller proxy = TokenSeller(state.proxy);
+        OTCSeller proxy = OTCSeller(state.proxy);
 
         // remove temporary access rights
         proxy.revokeRole(ORDER_SETTLE_ROLE, _setupState.deployer);
@@ -105,15 +105,15 @@ contract Setup {
         _checkStatus(SetupStatus.Finilized);
 
         SetupState memory state = _setupState;
-        TokenSeller proxy = TokenSeller(state.proxy);
+        OTCSeller proxy = OTCSeller(state.proxy);
 
         // check: Agent is only roles holder
         require(proxy.getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1);
         require(proxy.getRoleMemberCount(ORDER_SETTLE_ROLE) == 1);
         require(proxy.getRoleMemberCount(OPERATOR_ROLE) == 1);
 
-        require(proxy.getRoleMember(OPERATOR_ROLE, 0) == LIDO_AGENT);
         require(proxy.getRoleMember(ORDER_SETTLE_ROLE, 0) == LIDO_AGENT);
+        require(proxy.getRoleMember(OPERATOR_ROLE, 0) == LIDO_AGENT);
 
         // check: Agent is proxy admin
         require(OssifiableProxy(state.proxy).proxy__getAdmin() == LIDO_AGENT);

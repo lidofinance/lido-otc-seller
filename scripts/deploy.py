@@ -3,7 +3,7 @@ from utils.deployed_state import read_or_update_state
 import utils.log as log
 
 try:
-    from brownie import Setup, TokenSeller, interface, Wei
+    from brownie import Setup, OTCSeller, interface, Wei
 except ImportError:
     print("You're probably running inside Brownie console. Please call:")
     print("set_console_globals(interface=interface, PurchaseExecutor=PurchaseExecutor)")
@@ -11,9 +11,9 @@ except ImportError:
 
 def set_console_globals(**kwargs):
     global Setup
-    global TokenSeller
+    global OTCSeller
     global interface
-    TokenSeller = kwargs["TokenSeller"]
+    OTCSeller = kwargs["OTCSeller"]
     interface = kwargs["interface"]
 
 
@@ -49,12 +49,12 @@ def propose_sell_eth_for_dai(
     voting = interface.Voting(lido_dao_voting_address)
     finance = interface.Finance(lido_dao_finance_address)
     token_manager = interface.TokenManager(lido_dao_token_manager_address)
-    seller = TokenSeller.at(seller_address)
+    seller = OTCSeller.at(seller_address)
 
     (_, settle_call_data) = encode_settle_order(
         sell_token=weth_token_address,  # NOTE: in case of ETH, token address here must be WETH as we will sell wrapped ETH to WETH actually
         buy_token=dai_token_address,
-        receiver=seller_address,  # NOTE: receiver is the seller contract itself, see notes for {TokenSeller.sol-checkOrder}
+        receiver=seller_address,  # NOTE: receiver is the seller contract itself, see notes for {OTCSeller.sol-checkOrder}
         sell_amount=sell_amount,
         buy_amount=buy_amount,
         valid_to=valid_to,
@@ -96,8 +96,8 @@ def format_setup_status(status=0):
 
 
 def get_setup_state(setup):
-    [lastSetupStatus, deployerAddress, tokenSellerImplAddress, tokenSellerAddress] = setup.getSetupState()
-    # filter "setup" parameter from local vars
+    [lastSetupStatus, deployerAddress, otcSellerImplAddress, otcSellerAddress] = setup.getSetupState()
+    # filter "setup" parameter's var from all local vars
     state = DotMap({k: v for (k, v) in locals().items() if k != "setup"})
     state.lastSetupStatus = format_setup_status(state.lastSetupStatus)
     return state
@@ -106,35 +106,33 @@ def get_setup_state(setup):
 def deploy(tx_params, deployer):
     deployedState = read_or_update_state()
 
-    # setupAddress = deployedState.get("setupAddress") or ""
     if deployedState.setupAddress:
-        log.highlight("Setup template already deployed at", deployedState.setupAddress)
+        log.warn("Setup factory already deployed at", deployedState.setupAddress)
         setup = Setup.at(deployedState.setupAddress)
     else:
-        log.info("Deploying setup template (and TokenSeller contracts)...")
+        log.info("Deploying setup factory (and OTCSeller contracts)...")
         setup = Setup.deploy(deployer.address, tx_params)
         log.info("> txHash:", setup.tx.txid)
-        log.okay("Setup template deployed at", setup.address)
-
-        # print("setupState", setupState)
         deployedState = read_or_update_state({"setupDeployTx": setup.tx.txid, "setupAddress": setup.address})
+        log.okay("Setup factory deployed at", setup.address)
+
+    log.info("Getting setup state from contract...")
     setupState = get_setup_state(setup)
     deployedState = read_or_update_state(setupState)
 
-    log.okay("TokenSeller deployed at", setupState.tokenSellerAddress)
-    log.okay("TokenSeller implementation deployed at", setupState.tokenSellerImplAddress)
+    log.okay("OTCSeller deployed at", setupState.otcSellerAddress)
+    log.okay("OTCSeller implementation deployed at", setupState.otcSellerImplAddress)
 
     log.assert_equals("Setup status", setupState.lastSetupStatus, "Deployed")
 
-    seller = TokenSeller.at(setupState.tokenSellerAddress)
+    seller = OTCSeller.at(setupState.otcSellerAddress)
     return (setup, seller)
 
 
-def finalize(tx_params, setup_address):
-    setup = Setup.at(setup_address)
-    log.info("Finalizing TokenSeller setup...")
+def finalize(tx_params, setup):
+    log.info("Finalizing OTCSeller setup...")
     setupState = get_setup_state(setup)
-    log.assert_equals("Tx sender and actual deployer mismatch", tx_params["from"].address, setupState.deployerAddress)
+    log.assert_equals("Deployer address", tx_params["from"].address, setupState.deployerAddress)
 
     tx = setup.finalize(tx_params)
     log.info("> txHash:", tx.txid)
@@ -144,9 +142,9 @@ def finalize(tx_params, setup_address):
     log.assert_equals("Setup status", setupState.lastSetupStatus, "Finalized")
     read_or_update_state(setupState)
     setup.check()
-    log.brief("TokenSeller setup finalized and self-checked!")
+    log.brief("OTCSeller setup finalized and self-checked!")
 
-    seller = TokenSeller.at(setupState.tokenSellerAddress)
+    seller = OTCSeller.at(setupState.otcSellerAddress)
     return (setup, seller)
 
 
@@ -155,9 +153,9 @@ def deploy_non_finalized(tx_params, deployer):
     return (setup, seller)
 
 
-def deploy_finalized(tx_params, deployer):
+def deploy_and_finalize(tx_params, deployer):
     (setup, seller) = deploy_non_finalized(tx_params, deployer)
-    finalize(tx_params, setup.address)
+    finalize(tx_params, setup)
     return (setup, seller)
 
 

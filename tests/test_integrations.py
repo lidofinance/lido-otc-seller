@@ -7,7 +7,7 @@ from utils.config import chainlink_dai_eth, PRE_SIGNED
 
 def test_get_quotes(seller, sell_token, buy_token, sell_amount, buy_amount, fee_amount):
     slippage = seller.getSlippage()
-    maxSlippage = seller.MAX_SLIPPAGE()
+    maxSlippage = 1500 # 15% - Just to make sure prices don't vary toooo much
     worst_buy_amount = buy_amount * (10000 - maxSlippage) / 10000 / 10**18
 
     # ensure the CowSwap offer is not worse than exchange on curve.fi

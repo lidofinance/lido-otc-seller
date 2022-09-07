@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "lido-token-seller"
+name = "lido-otc-seller"
 version = "0.1.0"
 description = "TBD"
 authors = ["Lido dev team"]

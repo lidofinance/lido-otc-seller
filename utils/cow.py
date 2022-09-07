@@ -76,6 +76,7 @@ def api_create_order(
     }
     print(order_payload)
     r = requests.post(order_url, json=order_payload)
+
     assert r.ok and r.status_code == 201
     order_uid = r.json()
     return order_uid
