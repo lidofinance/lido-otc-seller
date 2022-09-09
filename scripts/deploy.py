@@ -48,9 +48,11 @@ def propose_transfer_eth_for_sell(
     _, weth_deposit_calldata = encode_wrap_eth(weth)
     evm_script = encode_call_script(
         [
+            # 1st, wrapping ETH to WETH
             encode_agent_execute(target=weth.address, call_value=sell_amount, call_data=weth_deposit_calldata, agent=agent),
+            # 2nd, sending WETH to Seller
             encode_token_transfer(
-                token_address=weth_token_address,  # NOTE: in case of ETH, token address here must be 0x0000000000000000000000000000000000000000
+                token_address=weth_token_address,
                 receiver=seller_address,
                 amount=sell_amount,
                 reference=reference,
