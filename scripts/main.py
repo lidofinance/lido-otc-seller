@@ -1,9 +1,9 @@
-from brownie import network, accounts, Setup, OTCSeller, OssifiableProxy
-import json
-from utils.deployed_state import read_or_update_state
+from brownie import network, accounts, OTCSeller
 from utils.env import get_env
 import utils.log as log
-from scripts.deploy import deploy, finalize, get_setup_state
+from scripts.deploy import check_deployed, deploy, make_constructor_args
+from utils.config import weth_token_address, lido_dao_agent_address, dai_token_address, chainlink_dai_eth
+from otc_seller_config import SELL_TOKEN, BUY_TOKEN,PRICE_FEED, BENEFICIARY,  MAX_SLIPPAGE
 
 # environment
 WEB3_INFURA_PROJECT_ID = get_env("WEB3_INFURA_PROJECT_ID")
@@ -49,13 +49,16 @@ def main():
 
     log.okay("Deploy parameters - Ok")
 
-    log.info("NETWORK", NETWORK)
-    log.info("DEPLOYER", deployer.address)
-    # log.info("TOKEN", TOKEN)
-    # log.info("BRIDGE", BRIDGE)
-    # log.info("RECIPIENT_CHAIN", RECIPIENT_CHAIN)
-    # log.info("RECIPIENT", RECIPIENT)
-    # log.info("ARBITER_FEE", ARBITER_FEE)
+    log.note("NETWORK", NETWORK)
+    log.note("DEPLOYER", deployer.address)
+
+    args = make_constructor_args(
+        sell_toke=SELL_TOKEN, buy_token=BUY_TOKEN, price_feed=PRICE_FEED, receiver=BENEFICIARY, max_slippage=MAX_SLIPPAGE
+    )
+
+    log.info("constructorArgs:")
+    for k, v in args.items():
+        log.note(k, v)
 
     proceed = log.prompt_yes_no("Proceed?")
 
@@ -63,28 +66,20 @@ def main():
         log.error("Script stopped!")
         return
 
-    log.brief(f"Deploying OTCSeller via factory...")
-    (setup, seller) = deploy({"from": deployer}, deployer=deployer)
+    log.note(f"Deploying OTCSeller (ETH-DAI) via factory...")
+    args.beneficiaryAddress = deployer.address
+    seller = deploy(tx_params={"from": deployer}, constructorArgs=args)
 
-    setupState = get_setup_state(setup)
+    log.info("Checking deployed OTCSeller...")
+    check_deployed(seller=seller, constructorArgs=args)
+    log.okay("Deployed OTCSeller - Ok")
 
-    if setupState.lastSetupStatus == 'Deployed':
-        log.info("Setup not finalized yet.")
-        proceed = log.prompt_yes_no("Continue with finalization?")
-        if proceed:
-            finalize({"from": deployer}, setup)
-
-    if network.show_active() == 'mainnet':
+    if network.show_active() == "mainnet":
         proceed = log.prompt_yes_no("(Re)Try to publish source codes?")
         if proceed:
-            Setup.publish_source(setup)
-            impl = OTCSeller.at(setupState.otcSellerImplAddress)
-            OTCSeller.publish_source(impl)
-            proxy = OssifiableProxy.at(setupState.otcSellerAddress)
-            OssifiableProxy.publish_source(proxy)
-
-            log.okay("Contract sources published!")
+            OTCSeller.publish_source(seller)
+            log.okay("Contract source published!")
     else:
         log.info(f"The current network '{network.show_active()}' is not 'mainnet'. Source publication skipped")
 
-    log.brief("All deployed metadata saved to", f"./deployed-{network.show_active()}.json")
+    log.note("All deployed metadata saved to", f"./deployed-{network.show_active()}.json")

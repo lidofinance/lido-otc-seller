@@ -1,32 +1,52 @@
 import pytest
-from brownie import chain, Wei, web3
+from brownie import chain, Wei, web3, reverts
 
-from utils.cow import api_create_order
-from utils.config import chainlink_dai_eth, PRE_SIGNED
+from utils.cow import api_create_order, api_get_sell_fee
+from utils.config import weth_token_address, dai_token_address, lido_dao_agent_address, cowswap_vault_relayer, PRE_SIGNED
+from otc_seller_config import MAX_SLIPPAGE
+
+SELL_AMOUNT = Wei("10000 ether")
 
 
-def test_get_quotes(seller, sell_token, buy_token, sell_amount, buy_amount, fee_amount):
-    slippage = seller.getSlippage()
-    maxSlippage = 1500 # 15% - Just to make sure prices don't vary toooo much
-    worst_buy_amount = buy_amount * (10000 - maxSlippage) / 10000 / 10**18
+@pytest.fixture
+def sell_amount():
+    return SELL_AMOUNT
 
-    # ensure the CowSwap offer is not worse than exchange on curve.fi
-    best_price = seller.getBestSwapPrice(sell_token, buy_token, 10**18)
-    best_buy_amount = best_price * sell_amount * (10000 - slippage) / 10000 / 10**18
-    assert best_buy_amount <= buy_amount and best_buy_amount >= worst_buy_amount
+
+@pytest.fixture
+def seller(deploy_seller_eth_for_dai):
+    return deploy_seller_eth_for_dai(receiver=lido_dao_agent_address, max_slippage=MAX_SLIPPAGE)
+
+
+@pytest.fixture
+def fee_buy_amount():
+    def run(sell_token, buy_token, sell_amount):
+        return api_get_sell_fee(sell_token, buy_token, sell_amount, "mainnet")
+
+    return run
+
+
+def test_get_quotes(seller, sell_amount, fee_buy_amount):
+    sell_token = weth_token_address
+    buy_token = dai_token_address
+    fee_amount, buy_amount = fee_buy_amount(sell_token=sell_token, buy_token=buy_token, sell_amount=sell_amount)
+    maxSlippage = seller.maxSlippage()
 
     # ensure the CowSwap offer is not worse than chainlink price
-    chainlink_price = seller.getChainlinkReversePrice(chainlink_dai_eth)
-    chainlink_buy_amount = chainlink_price * sell_amount * (10000 - slippage) / 10000 / 10**18
+    # note: in the case of selling ETH for DAI, we should use reverse price
+    # as the chainlink price feed returns the ETH amount for 1DAI
+    chainlink_price = seller.getChainlinkReversePrice()
+    # TODO: use token decimals
+    chainlink_buy_amount = chainlink_price * sell_amount * (10000 - maxSlippage) / 10000 / 10**18
+    assert chainlink_buy_amount <= buy_amount and chainlink_buy_amount > 0
 
-    assert chainlink_buy_amount <= buy_amount and chainlink_buy_amount >= worst_buy_amount
 
-
-
-def test_create_and_check_order(
-    seller, sell_token, buy_token, sell_amount, buy_amount, fee_amount, valid_to, appData, partiallyFillable, order_sell_eth_for_dai
-):
-    # creating order via CowSwap API
+def test_create_and_check_order(seller, sell_amount, app_data, make_order_sell_weth_for_dai, fee_buy_amount):
+    sell_token = weth_token_address
+    buy_token = dai_token_address
+    fee_amount, buy_amount = fee_buy_amount(sell_token=sell_token, buy_token=buy_token, sell_amount=sell_amount)
+    valid_to = chain.time() + 300  # 5m
+    # creating dummy 5min order via CowSwap API
     orderUid = api_create_order(
         sell_token=sell_token,
         buy_token=buy_token,
@@ -35,36 +55,75 @@ def test_create_and_check_order(
         fee_amount=fee_amount,
         valid_to=valid_to,
         sender=seller.address,
-        receiver=seller.address,
-        partiallyFillable=partiallyFillable,
-        appData=appData,
+        receiver=lido_dao_agent_address,
+        partiallyFillable=False,
+        app_data=app_data,
         network="mainnet",
     )
-    order = order_sell_eth_for_dai(seller)
+    order = make_order_sell_weth_for_dai(
+        sell_amount=sell_amount, buy_amount=buy_amount, fee_amount=fee_amount, receiver=lido_dao_agent_address, valid_to=valid_to
+    )
     assert orderUid == seller.getOrderUid(order)
-    assert seller.checkOrderETHForDAI(order, orderUid) == True
+    assert seller.checkOrder(order, orderUid) == True
 
 
-def test_settle_order(seller, sell_amount, order_sell_eth_for_dai, settle_order_and_pass_dao_vote, weth_token, cow_settlement):
-    order = order_sell_eth_for_dai(seller)
+def test_settle_order(
+    accounts, seller, sell_amount, fee_buy_amount, make_order_sell_weth_for_dai, transfer_eth_for_sell_and_pass_dao_vote, weth_token, cow_settlement
+):
+
+    transfer_eth_for_sell_and_pass_dao_vote(seller=seller, sell_amount=sell_amount)
+    assert weth_token.balanceOf(seller.address) == sell_amount
+
+    sell_token = weth_token_address
+    buy_token = dai_token_address
+    fee_amount, buy_amount = fee_buy_amount(sell_token=sell_token, buy_token=buy_token, sell_amount=sell_amount)
+    valid_to = chain.time() + 3600  # 1h
+    order = make_order_sell_weth_for_dai(
+        sell_amount=sell_amount, buy_amount=buy_amount, fee_amount=fee_amount, receiver=lido_dao_agent_address, valid_to=valid_to
+    )
 
     # skipping real order place and get orderUid directly
     orderUid = seller.getOrderUid(order)
 
-    settle_order_and_pass_dao_vote(seller, orderUid)
+    allowanceBefore = weth_token.allowance(seller.address, cowswap_vault_relayer)
+    tx = seller.settleOrder(order, orderUid, {"from": accounts[0]})
 
-    assert weth_token.balanceOf(seller.address) == sell_amount
+    assert weth_token.allowance(seller.address, cowswap_vault_relayer) >= allowanceBefore + sell_amount
     assert cow_settlement.preSignature(orderUid) == PRE_SIGNED
 
-
-# def test_cancel_order(seller, order_sell_eth_for_dai, settle_order_and_pass_dao_vote, cow_settlement):
-#     order = order_sell_eth_for_dai(seller)
-#     # skipping real order place and get orderUid directly
-#     orderUid = seller.getOrderUid(order)
-
-#     settle_order_and_pass_dao_vote(seller, orderUid)
-
-#     PRE_SIGNED = web3.keccak(text="GPv2Signing.Scheme.PreSign").hex() 
-#     assert cow_settlement.preSignature(orderUid) == PRE_SIGNED
+    assert "OrderSettled" in tx.events
+    assert tx.events["OrderSettled"]["orderUid"] == orderUid
+    assert "PreSignature" in tx.events
+    assert tx.events["PreSignature"]["orderUid"] == orderUid
+    assert tx.events["PreSignature"]["signed"] == True
 
 
+def test_cancel_order(
+    accounts, seller, sell_amount, fee_buy_amount, make_order_sell_weth_for_dai, transfer_eth_for_sell_and_pass_dao_vote, weth_token, cow_settlement
+):
+    transfer_eth_for_sell_and_pass_dao_vote(seller=seller, sell_amount=sell_amount)
+
+    sell_token = weth_token_address
+    buy_token = dai_token_address
+    fee_amount, buy_amount = fee_buy_amount(sell_token=sell_token, buy_token=buy_token, sell_amount=sell_amount)
+    valid_to = chain.time() + 3600  # 1h
+    order = make_order_sell_weth_for_dai(
+        sell_amount=sell_amount, buy_amount=buy_amount, fee_amount=fee_amount, receiver=lido_dao_agent_address, valid_to=valid_to
+    )
+
+    # skipping real order place and get orderUid directly
+    orderUid = seller.getOrderUid(order)
+
+    tx = seller.settleOrder(order, orderUid, {"from": accounts[0]})
+    with reverts():
+        seller.cancelOrder(orderUid, {"from": accounts[0]})
+
+    dao_agent_account = accounts.at(lido_dao_agent_address, force=True)
+    tx = seller.cancelOrder(orderUid, {"from": dao_agent_account})
+    assert "OrderCanceled" in tx.events
+    assert tx.events["OrderCanceled"]["orderUid"] == orderUid
+    assert "PreSignature" in tx.events
+    assert tx.events["PreSignature"]["orderUid"] == orderUid
+    assert tx.events["PreSignature"]["signed"] == False
+
+    assert cow_settlement.preSignature(orderUid) == 0

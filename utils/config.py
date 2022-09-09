@@ -2,7 +2,6 @@ import os
 import sys
 from brownie import network, accounts, web3
 
-
 # eth_token_address ='0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'
 eth_token_address = "0x0000000000000000000000000000000000000000"
 weth_token_address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
@@ -28,11 +27,6 @@ cowswap_settlement = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
 
 curve_smart_router = "0xfA9a30350048B2BF66865ee20363067c66f67e58"
 curve_synth_swap = "0x58A3c68e2D3aAf316239c003779F71aCb870Ee47"
-
-
-DEFAULT_ADMIN_ROLE = "0x0000000000000000000000000000000000000000000000000000000000000000"
-ORDER_SETTLE_ROLE = "0x8c00e39d0128d60dc88f0a55b6130751360a9124c2aa044096f703f81094c668"
-OPERATOR_ROLE = "0x97667070c54ef182b0f5858b034beac1b6f3089aa2d3188bb1e8929f4fa9b929"
 
 PRE_SIGNED = web3.keccak(text="GPv2Signing.Scheme.PreSign").hex() 
 

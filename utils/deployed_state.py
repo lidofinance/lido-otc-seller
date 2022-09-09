@@ -7,7 +7,7 @@ import utils.log as log
 
 def load_json(file):
     try:
-        return json.load(file, parse_int=True)
+        return json.load(file)
     except json.JSONDecodeError:
         return {}
 

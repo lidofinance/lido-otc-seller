@@ -1,11 +1,10 @@
 import sys
 import pytest
+from dotmap import DotMap
 from brownie import chain, Wei, web3
 import utils.log as log
-from scripts.deploy import start_dao_vote_sell_eth_for_dai, deploy_non_finalized, deploy_and_finalize
-
+from scripts.deploy import deploy, start_dao_vote_transfer_eth_for_sell, make_order, make_constructor_args
 from utils.cow import KIND_SELL, BALANCE_ERC20, api_get_sell_fee, api_create_order
-
 from utils.config import (
     eth_token_address,
     weth_token_address,
@@ -17,7 +16,9 @@ from utils.config import (
     dai_token_address,
     ldo_vote_executors_for_tests,
     cowswap_settlement,
+    chainlink_dai_eth,
 )
+from otc_seller_config import MAX_SLIPPAGE
 
 
 def pytest_configure(config):
@@ -33,16 +34,6 @@ def pytest_unconfigure(config):
 @pytest.fixture(scope="function", autouse=True)
 def shared_setup(fn_isolation):
     pass
-
-
-@pytest.fixture(scope="module")
-def setup_and_seller_non_finalized(accounts):
-    return deploy_non_finalized({"from": accounts[0]}, deployer=accounts[0])
-
-
-@pytest.fixture(scope="module")
-def setup_and_seller_finalized(accounts):
-    return deploy_and_finalize({"from": accounts[0]}, deployer=accounts[0])
 
 
 @pytest.fixture(scope="module")
@@ -154,121 +145,85 @@ def helpers(accounts, dao_voting, dai_token):
     return Helpers
 
 
-@pytest.fixture(scope="module")
-def deploy_not_finalized_seller(accounts):
-    def do(accounts):
-        (setup, seller) = deploy_non_finalized({"from": accounts[0]}, deployer=accounts[0])
-        return (setup, seller)
-
-    return do
-
-
-@pytest.fixture(scope="module")
-def deploy_and_finalize_seller(accounts):
-    def do():
-        (setup, seller) = deploy_and_finalize({"from": accounts[0]}, deployer=accounts[0])
-        return (setup, seller)
-
-    return do
-
-
 @pytest.fixture(scope="module", autouse=True)
-def sell_token():
-    return weth_token_address
-
-
-@pytest.fixture(scope="module", autouse=True)
-def buy_token():
-    return dai_token_address
-
-
-@pytest.fixture(scope="module", autouse=True)
-def sell_amount():
-    return Wei("10000 ether")
-
-
-@pytest.fixture(scope="module", autouse=True)
-def fee_buy_amount(sell_token, buy_token, sell_amount):
-    return api_get_sell_fee(sell_token, buy_token, sell_amount, "mainnet")
-
-
-@pytest.fixture(scope="module", autouse=True)
-def buy_amount(fee_buy_amount):
-    _, buy_amount = fee_buy_amount
-    return buy_amount
-
-
-@pytest.fixture(scope="module", autouse=True)
-def fee_amount(fee_buy_amount):
-    fee_amount, _ = fee_buy_amount
-    return fee_amount
-
-
-@pytest.fixture(scope="module", autouse=True)
-def appData():
+def app_data():
     return web3.keccak(text="LIDO 4ever!").hex()  # required field, do not change =)
     # return "0x0000000000000000000000000000000000000000000000000000000000000000"
 
 
-@pytest.fixture(scope="module", autouse=True)
-def valid_to(dao_voting):
-    return chain.time() + dao_voting.voteTime() + 3600  # max voting period + 1h
-
-
-@pytest.fixture(scope="module", autouse=True)
-def partiallyFillable():
-    return False
-
-
-@pytest.fixture(scope="module", autouse=True)
-def seller(setup_and_seller_finalized):
-    (_, seller) = setup_and_seller_finalized
-    return seller
-
-
-@pytest.fixture(scope="module", autouse=True)
-def seller_dev(setup_and_seller_non_finalized):
-    (_, seller) = setup_and_seller_non_finalized
-    return seller
+@pytest.fixture(scope="module")
+def beneficiary(accounts):
+    return accounts[1]
 
 
 @pytest.fixture(scope="module")
-def order_sell_eth_for_dai(sell_token, buy_token, sell_amount, buy_amount, fee_amount, valid_to, appData, partiallyFillable):
-    def make_order(seller):
-        order = [
-            sell_token,
-            buy_token,
-            seller.address,
-            int(sell_amount),
-            int(buy_amount),
-            valid_to,
-            appData,
-            int(fee_amount),
-            KIND_SELL,
-            partiallyFillable,
-            BALANCE_ERC20,
-            BALANCE_ERC20,
-        ]
-        return order
-
-    return make_order
-
-
-@pytest.fixture(scope="module")
-def settle_order_and_pass_dao_vote(ldo_holder, sell_amount, buy_amount, fee_amount, valid_to, appData, partiallyFillable, helpers):
-    def run(seller, orderUid, valid_to=valid_to, partiallyFillable=partiallyFillable):
-        vote_id = start_dao_vote_sell_eth_for_dai(
-            {"from": ldo_holder},
-            seller.address,
-            sell_amount,
-            buy_amount,
-            valid_to,
-            appData,
-            fee_amount,
-            partiallyFillable,
-            orderUid,
+def deployConstructorArgs():
+    def run(receiver, max_slippage):
+        # NOTE: sellToken and buyToken mast be set in order according chainlink price feed
+        # i.e., in the case of selling ETH for DAI, the sellToken must be set to DAI,
+        # as the chainlink price feed returns the ETH amount for 1DAI
+        return make_constructor_args(
+            sell_toke=dai_token_address,
+            buy_token=weth_token_address,
+            price_feed=chainlink_dai_eth,
+            receiver=receiver,
+            max_slippage=max_slippage,
         )
+
+    return run
+
+
+@pytest.fixture(scope="module")
+def deploy_seller_eth_for_dai(accounts, deployConstructorArgs):
+    def run(receiver, max_slippage):
+        constructorArgs = deployConstructorArgs(receiver, max_slippage)
+        return deploy({"from": accounts[0]}, constructorArgs)
+
+    return run
+
+
+@pytest.fixture(scope="module")
+def make_order_sell_weth_for_dai(app_data, fee_buy_amount_sell_weth_for_dai):
+    def run(sell_amount, buy_amount, fee_amount, receiver, valid_to):
+        fee_amount, buy_amount = fee_buy_amount_sell_weth_for_dai(sell_amount)
+        return make_order(
+            sell_token=weth_token_address,
+            buy_token=dai_token_address,
+            receiver=receiver,
+            sell_amount=sell_amount,
+            buy_amount=buy_amount,
+            valid_to=valid_to,
+            app_data=app_data,
+            fee_amount=fee_amount,
+            partiallyFillable=False,
+        )
+
+    return run
+
+
+@pytest.fixture(scope="module", autouse=True)
+def fee_buy_amount_sell_weth_for_dai():
+    def run(sell_amount):
+        return api_get_sell_fee(sell_token=weth_token_address, buy_token=dai_token_address, sell_amount=sell_amount, network="mainnet")
+
+    return run
+
+
+@pytest.fixture(scope="module", autouse=True)
+def fee_buy_amount_sell_dai_for_eth():
+    def run(sell_amount):
+        return api_get_sell_fee(sell_token=dai_token_address, buy_token=weth_token_address, sell_amount=sell_amount, network="mainnet")
+
+    return run
+
+
+@pytest.fixture(scope="module")
+def transfer_eth_for_sell_and_pass_dao_vote(ldo_holder, weth_token, helpers):
+    def run(seller, sell_amount):
+        vote_id = start_dao_vote_transfer_eth_for_sell({"from": ldo_holder}, seller_address=seller.address, sell_amount=sell_amount)
         helpers.pass_and_exec_dao_vote(vote_id)
-        return orderUid
+
+        assert weth_token.balanceOf(seller.address) >= sell_amount
+        return
 
     return run

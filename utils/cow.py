@@ -52,7 +52,7 @@ def api_create_order(
     sender,
     receiver,
     partiallyFillable=False,
-    appData="0x0000000000000000000000000000000000000000000000000000000000000000",
+    app_data="0x0000000000000000000000000000000000000000000000000000000000000000",
     network="mainnet",
 ):
     order_url = f"https://api.cow.fi/{network}/api/v1/orders"
@@ -63,18 +63,17 @@ def api_create_order(
         "sellAmount": str(sell_amount),  # sell amount before fee
         "buyAmount": str(buy_amount),  # buy amount after fee
         "validTo": valid_to,
-        "appData": appData,
+        "appData": app_data,
         "feeAmount": str(fee_amount),
         "kind": "sell",
         "partiallyFillable": partiallyFillable,
-        "receiver": sender,
+        "receiver": receiver,
         "signature": "0x",
-        "from": receiver,
+        "from": sender,
         "sellTokenBalance": "erc20",
         "buyTokenBalance": "erc20",
         "signingScheme": "presign",  # Very important. this tells the api you are going to sign on chain
     }
-    print(order_payload)
     r = requests.post(order_url, json=order_payload)
 
     assert r.ok and r.status_code == 201

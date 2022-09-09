@@ -52,15 +52,13 @@ def error(text, value=None):
 
 
 
-def brief(text, value = None):
+def note(text, value = None):
     result = highlight('[>>>>] ', color_yellow) + text
 
     if value is not None:
         result += ': ' + highlight(value, color_hl)
 
-    print()
     print(result)
-    print()
 
 
 def assert_equals(desc, actual, expected):
