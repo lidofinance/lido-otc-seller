@@ -30,8 +30,6 @@ from utils.config import (
     lido_dao_token_manager_address,
 )
 
-from otc_seller_config import SLIPPAGE, TOTAL_ETH_TO_SELL
-
 
 def propose_transfer_eth_for_sell(
     tx_params,

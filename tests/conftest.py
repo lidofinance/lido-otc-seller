@@ -18,7 +18,6 @@ from utils.config import (
     cowswap_settlement,
     chainlink_dai_eth,
 )
-from otc_seller_config import MAX_SLIPPAGE
 
 
 def pytest_configure(config):
