@@ -7,13 +7,13 @@ The OTC Seller is used to exchange one asset from the [DAO Treasury](https://mai
 The contract is non-upgradable, and its params supposed to be set upon the construction stage:
 
 - ERC-20 trading pair (or native ether)
-- Owner (beneficiar)
+- Owner (beneficiary)
 - ChainLink price feed
 - Spot price margin
 
 Thus, every deployed instance is devoted to represent the single trading scenario flow (e.g. selling LDO to DAI on behalf of Lido DAO Treasury).
 
-The contract allows to have sevaral exchange orders at the same time.
+The contract allows to have several exchange orders at the same time.
 
 > *NB:* Due to the CowSwap exchange logic, it is necessary to place an order via CowSwap API with an additional toolkit before before or at the moment of order settle.
 
@@ -31,11 +31,11 @@ export ETHERSCAN_TOKEN=<your etherscan api key>
 
 The seller parameters are set in [`otc_seller_config.py`]. The following parameters are can be set:
 
-* `SELL_TOKEN` primary token address to exchange.
-* `BUY_TOKEN` secondary token address to exchange for.
-* `PRICE_FEED` ChainLink price feed address for tokens pair above.
-* `BENEFICIARY` Beneficiary address. This address will be recipient of all filled exchange orders. Also it has rights to cancel non filled yet orders.
-* `MAX_SLIPPAGE` max allowed slippage from ChainLink price feed on order settle moment.
+- `SELL_TOKEN` primary token address to exchange.
+- `BUY_TOKEN` secondary token address to exchange for.
+- `PRICE_FEED` ChainLink price feed address for tokens pair above.
+- `BENEFICIARY` Beneficiary address. This address will be recipient of all filled exchange orders. Also it has rights to cancel non filled yet orders.
+- `MAX_SLIPPAGE` max allowed slippage from ChainLink price feed on order settle moment.
 
 Example content of `otc_seller_config.py`:
 
