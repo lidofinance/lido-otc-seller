@@ -128,7 +128,7 @@ def deploy(tx_params, registryConstructorArgs, constructorArgs):
 
     args = DotMap(constructorArgs)
     seller_address = registry.getSellerFor(args.sellTokenAddress, args.buyTokenAddress)
-    if (not registry.isSellerExists(seller_address)):
+    if not registry.isSellerExists(seller_address):
         log.info(f"Deploying OTCSeller for tokens pair {args.sellTokenAddress}:{args.buyTokenAddress}...")
         args = DotMap(constructorArgs)
         tx = registry.createSeller(
@@ -156,6 +156,13 @@ def deploy(tx_params, registryConstructorArgs, constructorArgs):
 
 def check_deployed(registry, seller, registryConstructorArgs, constructorArgs):
     assert registry.isSellerExists(seller.address) == True, "Incorrect seller deploy"
+    assert registry.getSellerFor(constructorArgs.sellTokenAddress, constructorArgs.buyTokenAddress) == seller.address, "Incorrect seller deploy"
+    assert registry.getSellerFor(constructorArgs.buyTokenAddress, constructorArgs.sellTokenAddress) == seller.address, "Incorrect seller deploy"
+
+    impl = OTCSeller.at(registry.implementation())
+    assert impl.DAO_VAULT() == registryConstructorArgs.daoVaultAddress, "Wrong Lido Agent address"
+    assert impl.WETH() == registryConstructorArgs.wethAddress, "Wrong WETH address"
+
     assert seller.DAO_VAULT() == registryConstructorArgs.daoVaultAddress, "Wrong Lido Agent address"
     assert seller.WETH() == registryConstructorArgs.wethAddress, "Wrong WETH address"
     assert seller.sellToken() == constructorArgs.sellTokenAddress, "Wrong sellToken address"
