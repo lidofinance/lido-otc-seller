@@ -44,11 +44,6 @@ contract OTCSeller is Initializable, AssetRecoverer {
         // The maximum allowable slippage that can be set, in BPS
         uint16 maxSlippage; // e.g. 200 = 2%
     }
-    // IERC20 public immutable sellToken;
-    // IERC20 public immutable buyToken;
-    // IChainlinkPriceFeedV3 public immutable priceFeed;
-    // // The maximum allowable slippage that can be set, in BPS
-    // uint16 public immutable maxSlippage; // e.g. 200 = 2%
     SellerConfig private _config;
 
     constructor(

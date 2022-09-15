@@ -12,13 +12,7 @@ contract OTCRegistry is Ownable {
 
     event SellerCreated(address indexed token0, address indexed token1, address pair);
 
-    // /// WETH or analog address
-    // address public immutable WETH;
-    // /// Lido Agent (Vault) address
-    // address public immutable DAO_VAULT;
-    // address public immutable BENEFICIARY;
     address public immutable implementation;
-    // bytes32 private immutable _bytecodeHash;
 
     EnumerableSet.AddressSet private _sellers;
 
@@ -27,12 +21,7 @@ contract OTCRegistry is Ownable {
         address daoVaultAddress,
         address beneficiaryAddress
     ) {
-        // WETH = wethAddress;
-        // DAO_VAULT = daoVaultAddress;
-        // BENEFICIARY = beneficiaryAddress;
-
         implementation = address(new OTCSeller(wethAddress, daoVaultAddress, beneficiaryAddress));
-        // _bytecodeHash = keccak256(abi.encodePacked(type(OTCSeller).creationCode));
     }
 
     function isSellerExists(address seller) external view returns (bool) {
@@ -51,7 +40,7 @@ contract OTCRegistry is Ownable {
         return _sellers.values();
     }
 
-    // calculates the CREATE2 address for a pair without making any external calls
+    /// @dev calculates the Clone address for a pair
     function getSellerFor(address tokenA, address tokenB) external view returns (address seller) {
         (address token0, address token1) = _sortTokens(tokenA, tokenB);
         bytes32 salt = keccak256(abi.encodePacked(token0, token1));
@@ -59,6 +48,7 @@ contract OTCRegistry is Ownable {
         // require(_sellers.contains(seller), "seller not exists");
     }
 
+    /// @dev create the Clone for implementation ant initialize it
     function createSeller(
         address tokenA,
         address tokenB,
