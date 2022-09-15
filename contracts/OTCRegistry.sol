@@ -48,7 +48,7 @@ contract OTCRegistry is Ownable {
         // require(_sellers.contains(seller), "seller not exists");
     }
 
-    /// @dev create the Clone for implementation ant initialize it
+    /// @dev create the Clone for implementation and initialize it
     function createSeller(
         address tokenA,
         address tokenB,
