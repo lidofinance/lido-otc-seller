@@ -4,7 +4,7 @@ import utils.log as log
 from utils.cow import KIND_SELL, BALANCE_ERC20, api_get_sell_fee, api_create_order
 
 try:
-    from brownie import OTCSeller, interface, Wei
+    from brownie import OTCSeller, OTCRegistry, interface, Wei
 except ImportError:
     print("You're probably running inside Brownie console. Please call:")
     print("set_console_globals(interface=interface, PurchaseExecutor=PurchaseExecutor)")
@@ -69,53 +69,101 @@ def propose_transfer_eth_for_sell(
     )
 
 
-def make_constructor_args(sell_toke, buy_token, price_feed, receiver, max_slippage):
-        return DotMap({
+def make_constructor_args(sell_toke, buy_token, price_feed, max_slippage):
+    return DotMap(
+        {
             "sellTokenAddress": sell_toke,
             "buyTokenAddress": buy_token,
             "chainLinkPriceFeedAddress": price_feed,
-            "beneficiaryAddress": receiver,
+            # "beneficiaryAddress": receiver,
             "maxSlippage": max_slippage,
-        })
+        }
+    )
 
-def deploy(tx_params, constructorArgs):
+
+def make_registry_constructor_args(weth_token, dao_vault, receiver):
+    return DotMap(
+        {
+            "wethAddress": weth_token,
+            "daoVaultAddress": dao_vault,
+            "beneficiaryAddress": receiver,
+        }
+    )
+
+
+def deploy_registry(tx_params, constructorArgs):
     deployedState = read_or_update_state()
 
-    if deployedState.sellerAddress:
-        log.warn("Seller already deployed at", deployedState.sellerAddress)
-        seller = OTCSeller.at(deployedState.sellerAddress)
+    if deployedState.registryAddress:
+        log.warn("OTCRegistry already deployed at", deployedState.registryAddress)
+        registry = OTCRegistry.at(deployedState.registryAddress)
     else:
-        log.info("Deploying OTCSeller...")
+        log.info("Deploying OTCRegistry...")
         args = DotMap(constructorArgs)
-        seller = OTCSeller.deploy(
-            args.sellTokenAddress,
-            args.buyTokenAddress,
-            args.chainLinkPriceFeedAddress,
+        registry = OTCRegistry.deploy(
+            args.wethAddress,
+            args.daoVaultAddress,
             args.beneficiaryAddress,
-            args.maxSlippage,
             tx_params,
         )
-        log.info("> txHash:", seller.tx.txid)
+        log.info("> txHash:", registry.tx.txid)
+        implementationAddress = registry.implementation()
         deployedState = read_or_update_state(
             {
                 "deployer": tx_params["from"].address,
-                "sellerDeployTx": seller.tx.txid,
-                "sellerAddress": seller.address,
-                "sellerDeployConstructorArgs": args.toDict(),
+                "registryDeployTx": registry.tx.txid,
+                "registryAddress": registry.address,
+                "registryDeployConstructorArgs": args.toDict(),
+                "implementationAddress": implementationAddress,
             }
         )
-        log.okay("OTCSeller deployed at", seller.address)
+        log.okay("OTCRegistry deployed at", registry.address)
 
-    return seller
+    return registry
 
-def check_deployed(seller, constructorArgs):
-    assert seller.LIDO_AGENT() == lido_dao_agent_address, "Wrong Lido Agent address"
-    assert seller.WETH() == weth_token_address, "Wrong WETH address"
+
+def deploy(tx_params, registryConstructorArgs, constructorArgs):
+    # deployedState = read_or_update_state()
+    registry = deploy_registry(tx_params, registryConstructorArgs)
+
+    args = DotMap(constructorArgs)
+    seller_address = registry.getSellerFor(args.sellTokenAddress, args.buyTokenAddress)
+    if (not registry.isSellerExists(seller_address)):
+        log.info(f"Deploying OTCSeller for tokens pair {args.sellTokenAddress}:{args.buyTokenAddress}...")
+        args = DotMap(constructorArgs)
+        tx = registry.createSeller(
+            args.sellTokenAddress,
+            args.buyTokenAddress,
+            args.chainLinkPriceFeedAddress,
+            args.maxSlippage,
+            tx_params,
+        )
+        log.info("> txHash:", tx.txid)
+        deployedState = read_or_update_state(
+            {
+                "seller0DeployTx": tx.txid,
+                "seller0Address": seller_address,
+                "seller0DeployConstructorArgs": args.toDict(),
+            }
+        )
+        log.okay("OTCSeller deployed at", seller_address)
+    else:
+        log.warn("Seller already deployed at", seller_address)
+    seller = OTCSeller.at(seller_address)
+
+    return (registry, seller)
+
+
+def check_deployed(registry, seller, registryConstructorArgs, constructorArgs):
+    assert registry.isSellerExists(seller.address) == True, "Incorrect seller deploy"
+    assert seller.DAO_VAULT() == registryConstructorArgs.daoVaultAddress, "Wrong Lido Agent address"
+    assert seller.WETH() == registryConstructorArgs.wethAddress, "Wrong WETH address"
     assert seller.sellToken() == constructorArgs.sellTokenAddress, "Wrong sellToken address"
     assert seller.buyToken() == constructorArgs.buyTokenAddress, "Wrong buyToken address"
-    assert seller.beneficiary() == constructorArgs.beneficiaryAddress, "Wrong beneficiary address"
+    assert seller.BENEFICIARY() == registryConstructorArgs.beneficiaryAddress, "Wrong beneficiary address"
     assert seller.priceFeed() == constructorArgs.chainLinkPriceFeedAddress, "Wrong ChainLink price feed address"
     assert seller.maxSlippage() == constructorArgs.maxSlippage, "Wrong max slippage"
+
 
 def start_dao_vote_transfer_eth_for_sell(tx_params, seller_address, sell_amount):
     (vote_id, _) = propose_transfer_eth_for_sell(

@@ -1,5 +1,5 @@
 import pytest
-from brownie import chain, reverts, Wei
+from brownie import chain, reverts, Wei, OTCSeller
 from scripts.deploy import check_deployed
 
 from utils.config import lido_dao_agent_address, cowswap_vault_relayer, PRE_SIGNED
@@ -14,8 +14,20 @@ def sell_amount():
 
 
 @pytest.fixture
-def seller(beneficiary, deploy_seller_eth_for_dai):
+def registry_and_seller(beneficiary, deploy_seller_eth_for_dai):
     return deploy_seller_eth_for_dai(receiver=beneficiary, max_slippage=MAX_SLIPPAGE)
+
+
+@pytest.fixture
+def seller(registry_and_seller):
+    (_, seller) = registry_and_seller
+    return seller
+
+
+@pytest.fixture
+def registry(registry_and_seller):
+    (registry, _) = registry_and_seller
+    return registry
 
 
 @pytest.fixture
@@ -61,9 +73,21 @@ def settled_order(accounts, seller, beneficiary, sell_amount, make_order_sell_we
     return (order, orderUid, tx)
 
 
-def test_deploy_params(seller, beneficiary, deployConstructorArgs):
-    args = deployConstructorArgs(beneficiary, MAX_SLIPPAGE)
-    check_deployed(seller=seller, constructorArgs=args)
+def test_deploy_params(registry, seller, beneficiary, deployRegistryConstructorArgs, deployConstructorArgs):
+    regArgs = deployRegistryConstructorArgs(receiver=beneficiary)
+    args = deployConstructorArgs(max_slippage=MAX_SLIPPAGE)
+    check_deployed(registry=registry, seller=seller, registryConstructorArgs=regArgs, constructorArgs=args)
+
+
+def test_initialize(accounts, registry, seller):
+    dummyAddress = "0x0000000000000000000000000000000000000001"
+    impl = OTCSeller.at(registry.implementation())
+    # try initialize impl
+    with reverts("Only registry can call"):
+        impl.initialize(dummyAddress, dummyAddress, dummyAddress, 111, {"from": accounts[0]})
+    # retry initialize
+    with reverts("Initializable: contract is already initialized"):
+        seller.initialize(dummyAddress, dummyAddress, dummyAddress, 111, {"from": accounts[0]})
 
 
 def test_get_chainlink_price(seller):

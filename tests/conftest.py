@@ -3,7 +3,7 @@ import pytest
 from dotmap import DotMap
 from brownie import chain, Wei, web3
 import utils.log as log
-from scripts.deploy import deploy, start_dao_vote_transfer_eth_for_sell, make_order, make_constructor_args
+from scripts.deploy import deploy, make_registry_constructor_args, start_dao_vote_transfer_eth_for_sell, make_order, make_constructor_args
 from utils.cow import KIND_SELL, BALANCE_ERC20, api_get_sell_fee, api_create_order
 from utils.config import (
     eth_token_address,
@@ -156,8 +156,23 @@ def beneficiary(accounts):
 
 
 @pytest.fixture(scope="module")
+def deployRegistryConstructorArgs():
+    def run(receiver):
+        # NOTE: sellToken and buyToken mast be set in order according chainlink price feed
+        # i.e., in the case of selling ETH for DAI, the sellToken must be set to DAI,
+        # as the chainlink price feed returns the ETH amount for 1DAI
+        return make_registry_constructor_args(
+            weth_token=weth_token_address,
+            dao_vault=lido_dao_agent_address,
+            receiver=receiver,
+        )
+
+    return run
+
+
+@pytest.fixture(scope="module")
 def deployConstructorArgs():
-    def run(receiver, max_slippage):
+    def run(max_slippage):
         # NOTE: sellToken and buyToken mast be set in order according chainlink price feed
         # i.e., in the case of selling ETH for DAI, the sellToken must be set to DAI,
         # as the chainlink price feed returns the ETH amount for 1DAI
@@ -165,7 +180,6 @@ def deployConstructorArgs():
             sell_toke=dai_token_address,
             buy_token=weth_token_address,
             price_feed=chainlink_dai_eth,
-            receiver=receiver,
             max_slippage=max_slippage,
         )
 
@@ -173,10 +187,11 @@ def deployConstructorArgs():
 
 
 @pytest.fixture(scope="module")
-def deploy_seller_eth_for_dai(accounts, deployConstructorArgs):
+def deploy_seller_eth_for_dai(accounts, deployRegistryConstructorArgs, deployConstructorArgs):
     def run(receiver, max_slippage):
-        constructorArgs = deployConstructorArgs(receiver, max_slippage)
-        return deploy({"from": accounts[0]}, constructorArgs)
+        registryConstructorArgs = deployRegistryConstructorArgs(receiver)
+        constructorArgs = deployConstructorArgs(max_slippage)
+        return deploy({"from": accounts[0]}, registryConstructorArgs, constructorArgs)
 
     return run
 

@@ -1,7 +1,7 @@
-from brownie import network, accounts, OTCSeller
+from brownie import network, accounts, OTCSeller, OTCRegistry
 from utils.env import get_env
 import utils.log as log
-from scripts.deploy import check_deployed, deploy, make_constructor_args
+from scripts.deploy import check_deployed, deploy, make_constructor_args, make_registry_constructor_args
 from utils.config import weth_token_address, lido_dao_agent_address, dai_token_address, chainlink_dai_eth
 from otc_seller_config import SELL_TOKEN, BUY_TOKEN,PRICE_FEED, BENEFICIARY,  MAX_SLIPPAGE
 
@@ -52,8 +52,16 @@ def main():
     log.note("NETWORK", NETWORK)
     log.note("DEPLOYER", deployer.address)
 
+    regArgs = make_registry_constructor_args(
+        weth_token=weth_token_address, dao_vault=lido_dao_agent_address, receiver=BENEFICIARY
+    )
+
+    log.info("registryConstructorArgs:")
+    for k, v in regArgs.items():
+        log.note(k, v)
+
     args = make_constructor_args(
-        sell_toke=SELL_TOKEN, buy_token=BUY_TOKEN, price_feed=PRICE_FEED, receiver=BENEFICIARY, max_slippage=MAX_SLIPPAGE
+        sell_toke=SELL_TOKEN, buy_token=BUY_TOKEN, price_feed=PRICE_FEED, max_slippage=MAX_SLIPPAGE
     )
 
     log.info("constructorArgs:")
@@ -67,17 +75,18 @@ def main():
         return
 
     log.note(f"Deploying OTCSeller (ETH-DAI) via factory...")
-    args.beneficiaryAddress = deployer.address
-    seller = deploy(tx_params={"from": deployer}, constructorArgs=args)
+    # args.beneficiaryAddress = deployer.address
+    (registry, seller) = deploy(tx_params={"from": deployer}, registryConstructorArgs=regArgs, constructorArgs=args)
 
     log.info("Checking deployed OTCSeller...")
-    check_deployed(seller=seller, constructorArgs=args)
+    check_deployed(registry=registry, seller=seller, registryConstructorArgs=regArgs, constructorArgs=args)
     log.okay("Deployed OTCSeller - Ok")
 
     if network.show_active() == "mainnet":
         proceed = log.prompt_yes_no("(Re)Try to publish source codes?")
         if proceed:
-            OTCSeller.publish_source(seller)
+            OTCRegistry.publish_source(registry)
+            OTCSeller.publish_source(registry.implementation())
             log.okay("Contract source published!")
     else:
         log.info(f"The current network '{network.show_active()}' is not 'mainnet'. Source publication skipped")
