@@ -2,7 +2,7 @@ import pytest
 from brownie import chain, reverts, Wei, OTCSeller
 from scripts.deploy import check_deployed
 
-from utils.config import lido_dao_agent_address, cowswap_vault_relayer, PRE_SIGNED
+from utils.config import lido_dao_agent_address, cowswap_vault_relayer, PRE_SIGNED, chainlink_dai_eth, weth_token_address, dai_token_address
 from otc_seller_config import MAX_SLIPPAGE
 
 SELL_AMOUNT = Wei("100 ether")
@@ -88,6 +88,16 @@ def test_initialize(accounts, registry, seller):
     # retry initialize
     with reverts("Initializable: contract is already initialized"):
         seller.initialize(dummyAddress, dummyAddress, dummyAddress, 111, {"from": accounts[0]})
+
+
+def test_retry_deploy_same_tokens(accounts, registry, deployConstructorArgs):
+    args = deployConstructorArgs(max_slippage=MAX_SLIPPAGE)
+    with reverts("Seller exists"):
+        registry.createSeller(args.sellTokenAddress, args.buyTokenAddress, args.chainLinkPriceFeedAddress, args.maxSlippage, {"from": accounts[0]})
+
+    # swap tokens
+    with reverts("Seller exists"):
+        registry.createSeller(args.buyTokenAddress, args.sellTokenAddress, args.chainLinkPriceFeedAddress, args.maxSlippage, {"from": accounts[0]})
 
 
 def test_get_chainlink_price(seller):
