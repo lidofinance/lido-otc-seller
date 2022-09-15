@@ -80,7 +80,7 @@ def main():
 
     log.info("Checking deployed OTCSeller...")
     check_deployed(registry=registry, seller=seller, registryConstructorArgs=regArgs, constructorArgs=args)
-    log.okay("Check OTCSeller pass")
+    log.okay("OTCSeller check pass")
 
     if network.show_active() == "mainnet":
         proceed = log.prompt_yes_no("(Re)Try to publish source codes?")
