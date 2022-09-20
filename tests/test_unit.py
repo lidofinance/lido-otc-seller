@@ -2,7 +2,7 @@ import pytest
 from brownie import chain, reverts, Wei, OTCSeller
 from scripts.deploy import check_deployed
 
-from utils.config import lido_dao_agent_address, cowswap_vault_relayer, PRE_SIGNED, chainlink_dai_eth, weth_token_address, dai_token_address
+from utils.config import lido_dao_agent_address, cowswap_vault_relayer, PRE_SIGNED
 from otc_seller_config import MAX_MARGIN
 
 SELL_AMOUNT = Wei("100 ether")
@@ -94,11 +94,15 @@ def test_initialize(accounts, registry, seller):
 def test_retry_deploy_same_tokens(accounts, registry, createSellerInitializeArgs):
     args = createSellerInitializeArgs(max_margin=MAX_MARGIN)
     with reverts("Seller exists"):
-        registry.createSeller(args.sellTokenAddress, args.buyTokenAddress, args.chainLinkPriceFeedAddress, args.maxMargin, args.constantPrice, {"from": accounts[0]})
+        registry.createSeller(
+            args.sellTokenAddress, args.buyTokenAddress, args.chainLinkPriceFeedAddress, args.maxMargin, args.constantPrice, {"from": accounts[0]}
+        )
 
     # swap tokens
     with reverts("Seller exists"):
-        registry.createSeller(args.buyTokenAddress, args.sellTokenAddress, args.chainLinkPriceFeedAddress, args.maxMargin, args.constantPrice, {"from": accounts[0]})
+        registry.createSeller(
+            args.buyTokenAddress, args.sellTokenAddress, args.chainLinkPriceFeedAddress, args.maxMargin, args.constantPrice, {"from": accounts[0]}
+        )
 
 
 def test_get_chainlink_price_and_max_margin(seller):

@@ -1,5 +1,5 @@
 import pytest
-from brownie import chain, Wei, web3, reverts
+from brownie import chain, Wei, reverts
 
 from utils.cow import api_create_order, api_get_sell_fee
 from utils.config import weth_token_address, dai_token_address, lido_dao_agent_address, cowswap_vault_relayer, PRE_SIGNED
@@ -17,10 +17,12 @@ def sell_amount():
 def registry_and_seller(deploy_seller_eth_for_dai):
     return deploy_seller_eth_for_dai(receiver=lido_dao_agent_address, max_margin=MAX_MARGIN)
 
+
 @pytest.fixture
 def seller(registry_and_seller):
     (_, seller) = registry_and_seller
     return seller
+
 
 @pytest.fixture
 def registry(registry_and_seller):

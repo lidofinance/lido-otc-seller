@@ -51,12 +51,11 @@ def error(text, value=None):
     print(result)
 
 
-
-def note(text, value = None):
-    result = highlight('[>>>>] ', color_yellow) + text
+def note(text, value=None):
+    result = highlight("[>>>>] ", color_yellow) + text
 
     if value is not None:
-        result += ': ' + highlight(value, color_hl)
+        result += ": " + highlight(value, color_hl)
 
     print(result)
 

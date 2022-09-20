@@ -1,9 +1,5 @@
 from utils.evm_script import encode_call_script, EMPTY_CALLSCRIPT
 
-from utils.cow import KIND_SELL, BALANCE_ERC20
-
-from utils.config import weth_token_address
-
 
 def create_vote(voting, token_manager, vote_desc, evm_script, tx_params):
     new_vote_script = encode_call_script(

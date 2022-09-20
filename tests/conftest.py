@@ -1,12 +1,10 @@
 import sys
 import pytest
-from dotmap import DotMap
-from brownie import chain, Wei, web3
+from brownie import chain, web3
 import utils.log as log
 from scripts.deploy import deploy, make_registry_constructor_args, start_dao_vote_transfer_eth_for_sell, make_order, make_initialize_args
-from utils.cow import KIND_SELL, BALANCE_ERC20, api_get_sell_fee, api_create_order
+
 from utils.config import (
-    eth_token_address,
     weth_token_address,
     ldo_token_address,
     lido_dao_acl_address,

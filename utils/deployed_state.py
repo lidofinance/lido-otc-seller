@@ -11,6 +11,7 @@ def load_json(file):
     except json.JSONDecodeError:
         return {}
 
+
 def read_or_update_state(stateUpdate={}):
     if is_called_from_test():
         return DotMap(stateUpdate)
@@ -22,7 +23,7 @@ def read_or_update_state(stateUpdate={}):
             state = {**state, **stateUpdate}
             fp.seek(0)
             fp.truncate()
-            json.dump(state, fp, indent = 4)
+            json.dump(state, fp, indent=4)
             log.info("Saving metadata to", deployed_filename)
         fp.close()
     return DotMap(state)

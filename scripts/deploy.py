@@ -1,7 +1,7 @@
 from dotmap import DotMap
 from utils.deployed_state import read_or_update_state
 import utils.log as log
-from utils.cow import KIND_SELL, BALANCE_ERC20, api_get_sell_fee, api_create_order
+from utils.cow import KIND_SELL, BALANCE_ERC20
 
 try:
     from brownie import OTCSeller, OTCRegistry, interface, Wei
@@ -171,8 +171,7 @@ def check_deployed(registry, seller, registryConstructorArgs, sellerInitializeAr
     assert seller.tokenB() == sellerInitializeArgs.buyTokenAddress, "Wrong buyToken address"
     assert seller.BENEFICIARY() == registryConstructorArgs.beneficiaryAddress, "Wrong beneficiary address"
 
-    (priceFeed, maxMargin, reverse, constPrice) = registry.getPairConfig(sellerInitializeArgs.sellTokenAddress,sellerInitializeArgs.buyTokenAddress )
-
+    (priceFeed, maxMargin, reverse, constPrice) = registry.getPairConfig(sellerInitializeArgs.sellTokenAddress, sellerInitializeArgs.buyTokenAddress)
 
     assert priceFeed == sellerInitializeArgs.chainLinkPriceFeedAddress, "Wrong ChainLink price feed address"
     assert maxMargin == sellerInitializeArgs.maxMargin, "Wrong max priceMargin"

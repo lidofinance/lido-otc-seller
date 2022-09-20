@@ -1,5 +1,4 @@
 import os
-import sys
 from brownie import network, accounts, web3
 
 # eth_token_address ='0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'
@@ -28,9 +27,9 @@ cowswap_settlement = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
 curve_smart_router = "0xfA9a30350048B2BF66865ee20363067c66f67e58"
 curve_synth_swap = "0x58A3c68e2D3aAf316239c003779F71aCb870Ee47"
 
-PRE_SIGNED = web3.keccak(text="GPv2Signing.Scheme.PreSign").hex() 
+PRE_SIGNED = web3.keccak(text="GPv2Signing.Scheme.PreSign").hex()
 
- # together these accounts hold 15% of LDO total supply
+# together these accounts hold 15% of LDO total supply
 ldo_vote_executors_for_tests = [
     "0x3e40d73eb977dc6a537af587d48316fee66e9c8c",
     "0xb8d83908aab38a159f3da47a59d84db8e1838712",
@@ -46,6 +45,4 @@ def get_deployer_account(is_live):
     if is_live and "DEPLOYER" not in os.environ:
         raise EnvironmentError("Please set DEPLOYER env variable to the deployer account name")
 
-    return (
-        accounts.load(os.environ["DEPLOYER"]) if is_live else accounts.at(ldo_vote_executors_for_tests[0], force=True)
-    )
+    return accounts.load(os.environ["DEPLOYER"]) if is_live else accounts.at(ldo_vote_executors_for_tests[0], force=True)
