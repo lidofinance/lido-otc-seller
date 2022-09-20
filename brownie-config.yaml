@@ -8,7 +8,7 @@ compiler:
   evm_version: istanbul
   minify_source: false
   solc:
-    version: 0.8.15
+    version: 0.8.10
     optimize: true
     runs: 200
     remappings:

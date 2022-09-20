@@ -1,6 +1,6 @@
 # Lido OTC seller
 
-The OTC Seller is used to exchange one asset from the [DAO Treasury](https://mainnet.lido.fi/#/lido-dao/0x3e40d73eb977dc6a537af587d48316fee66e9c8c/) to another asset at market spot price. The contract implements this type of exchange through the [CowSwap](https://cow.fi/) platform.
+The OTC Seller is used to exchange one asset from the [DAO Treasury](https://mainnet.lido.fi/#/lido-dao/0x3e40d73eb977dc6a537af587d48316fee66e9c8c/) to another asset at market spot price within the defined margin. The contract implements this type of exchange through the [CowSwap](https://cow.fi/) platform.
 
 ## Description
 
@@ -35,7 +35,7 @@ The seller parameters are set in [`otc_seller_config.py`]. The following paramet
 - `BUY_TOKEN` secondary token address to exchange for.
 - `PRICE_FEED` ChainLink price feed address for tokens pair above.
 - `BENEFICIARY` Beneficiary address. This address will be recipient of all filled exchange orders. Also it has rights to cancel non filled yet orders.
-- `MAX_SLIPPAGE` max allowed slippage from ChainLink price feed on order settle moment.
+- `MAX_MARGIN` max allowed spot price margin from ChainLink price feed on order settle moment.
 
 Example content of `otc_seller_config.py`:
 
@@ -48,8 +48,8 @@ BUY_TOKEN=0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2
 PRICE_FEED=0x773616E4d11A78F511299002da57A0a94577F1f4
 # Lido Agent
 BENEFICIARY=0x3e40D73EB977Dc6a537aF587D48316feE66E9C8c
-# initial max slippage, value in BPS
-MAX_SLIPPAGE = 200 # 2%
+# initial max spot price margin, value in BPS
+MAX_MARGIN = 200 # 2%
 ```
 
 ## Run tests
