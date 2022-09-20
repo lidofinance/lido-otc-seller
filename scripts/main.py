@@ -1,9 +1,9 @@
 from brownie import network, accounts, OTCSeller, OTCRegistry
 from utils.env import get_env
 import utils.log as log
-from scripts.deploy import check_deployed, deploy, make_constructor_args, make_registry_constructor_args
+from scripts.deploy import check_deployed, deploy, make_initialize_args, make_registry_constructor_args
 from utils.config import weth_token_address, lido_dao_agent_address, dai_token_address, chainlink_dai_eth
-from otc_seller_config import SELL_TOKEN, BUY_TOKEN,PRICE_FEED, BENEFICIARY,  MAX_SLIPPAGE
+from otc_seller_config import SELL_TOKEN, BUY_TOKEN,PRICE_FEED, BENEFICIARY,  MAX_MARGIN
 
 # environment
 WEB3_INFURA_PROJECT_ID = get_env("WEB3_INFURA_PROJECT_ID")
@@ -60,11 +60,11 @@ def main():
     for k, v in regArgs.items():
         log.note(k, v)
 
-    args = make_constructor_args(
-        sell_toke=SELL_TOKEN, buy_token=BUY_TOKEN, price_feed=PRICE_FEED, max_slippage=MAX_SLIPPAGE
+    args = make_initialize_args(
+        sell_toke=SELL_TOKEN, buy_token=BUY_TOKEN, price_feed=PRICE_FEED, max_margin=MAX_MARGIN, const_price=0
     )
 
-    log.info("constructorArgs:")
+    log.info("sellerInitializeArgs:")
     for k, v in args.items():
         log.note(k, v)
 
@@ -76,10 +76,10 @@ def main():
 
     log.note(f"Deploying OTCSeller (ETH-DAI) via factory...")
     # args.beneficiaryAddress = deployer.address
-    (registry, seller) = deploy(tx_params={"from": deployer}, registryConstructorArgs=regArgs, constructorArgs=args)
+    (registry, seller) = deploy(tx_params={"from": deployer}, registryConstructorArgs=regArgs, sellerInitializeArgs=args)
 
     log.info("Checking deployed OTCSeller...")
-    check_deployed(registry=registry, seller=seller, registryConstructorArgs=regArgs, constructorArgs=args)
+    check_deployed(registry=registry, seller=seller, registryConstructorArgs=regArgs, sellerInitializeArgs=args)
     log.okay("OTCSeller check pass")
 
     if network.show_active() == "mainnet":

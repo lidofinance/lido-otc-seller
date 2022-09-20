@@ -3,7 +3,7 @@ import pytest
 from dotmap import DotMap
 from brownie import chain, Wei, web3
 import utils.log as log
-from scripts.deploy import deploy, make_registry_constructor_args, start_dao_vote_transfer_eth_for_sell, make_order, make_constructor_args
+from scripts.deploy import deploy, make_registry_constructor_args, start_dao_vote_transfer_eth_for_sell, make_order, make_initialize_args
 from utils.cow import KIND_SELL, BALANCE_ERC20, api_get_sell_fee, api_create_order
 from utils.config import (
     eth_token_address,
@@ -171,35 +171,31 @@ def deployRegistryConstructorArgs():
 
 
 @pytest.fixture(scope="module")
-def deployConstructorArgs():
-    def run(max_slippage):
+def createSellerInitializeArgs():
+    def run(max_margin):
         # NOTE: sellToken and buyToken mast be set in order according chainlink price feed
         # i.e., in the case of selling ETH for DAI, the sellToken must be set to DAI,
         # as the chainlink price feed returns the ETH amount for 1DAI
-        return make_constructor_args(
-            sell_toke=dai_token_address,
-            buy_token=weth_token_address,
-            price_feed=chainlink_dai_eth,
-            max_slippage=max_slippage,
+        return make_initialize_args(
+            sell_toke=dai_token_address, buy_token=weth_token_address, price_feed=chainlink_dai_eth, max_margin=max_margin, const_price=0
         )
 
     return run
 
 
 @pytest.fixture(scope="module")
-def deploy_seller_eth_for_dai(accounts, deployRegistryConstructorArgs, deployConstructorArgs):
-    def run(receiver, max_slippage):
+def deploy_seller_eth_for_dai(accounts, deployRegistryConstructorArgs, createSellerInitializeArgs):
+    def run(receiver, max_margin):
         registryConstructorArgs = deployRegistryConstructorArgs(receiver)
-        constructorArgs = deployConstructorArgs(max_slippage)
-        return deploy({"from": accounts[0]}, registryConstructorArgs, constructorArgs)
+        sellerInitializeArgs = createSellerInitializeArgs(max_margin)
+        return deploy({"from": accounts[0]}, registryConstructorArgs, sellerInitializeArgs)
 
     return run
 
 
 @pytest.fixture(scope="module")
-def make_order_sell_weth_for_dai(app_data, fee_buy_amount_sell_weth_for_dai):
+def make_order_sell_weth_for_dai(app_data):
     def run(sell_amount, buy_amount, fee_amount, receiver, valid_to):
-        fee_amount, buy_amount = fee_buy_amount_sell_weth_for_dai(sell_amount)
         return make_order(
             sell_token=weth_token_address,
             buy_token=dai_token_address,
@@ -211,22 +207,6 @@ def make_order_sell_weth_for_dai(app_data, fee_buy_amount_sell_weth_for_dai):
             fee_amount=fee_amount,
             partiallyFillable=False,
         )
-
-    return run
-
-
-@pytest.fixture(scope="module", autouse=True)
-def fee_buy_amount_sell_weth_for_dai():
-    def run(sell_amount):
-        return api_get_sell_fee(sell_token=weth_token_address, buy_token=dai_token_address, sell_amount=sell_amount, network="mainnet")
-
-    return run
-
-
-@pytest.fixture(scope="module", autouse=True)
-def fee_buy_amount_sell_dai_for_eth():
-    def run(sell_amount):
-        return api_get_sell_fee(sell_token=dai_token_address, buy_token=weth_token_address, sell_amount=sell_amount, network="mainnet")
 
     return run
 

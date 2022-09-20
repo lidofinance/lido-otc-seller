@@ -69,14 +69,15 @@ def propose_transfer_eth_for_sell(
     )
 
 
-def make_constructor_args(sell_toke, buy_token, price_feed, max_slippage):
+def make_initialize_args(sell_toke, buy_token, price_feed, max_margin, const_price):
     return DotMap(
         {
             "sellTokenAddress": sell_toke,
             "buyTokenAddress": buy_token,
             "chainLinkPriceFeedAddress": price_feed,
             # "beneficiaryAddress": receiver,
-            "maxSlippage": max_slippage,
+            "maxMargin": max_margin,
+            "constantPrice": const_price,
         }
     )
 
@@ -91,7 +92,7 @@ def make_registry_constructor_args(weth_token, dao_vault, receiver):
     )
 
 
-def deploy_registry(tx_params, constructorArgs):
+def deploy_registry(tx_params, sellerInitializeArgs):
     deployedState = read_or_update_state()
 
     if deployedState.registryAddress:
@@ -99,7 +100,7 @@ def deploy_registry(tx_params, constructorArgs):
         registry = OTCRegistry.at(deployedState.registryAddress)
     else:
         log.info("Deploying OTCRegistry...")
-        args = DotMap(constructorArgs)
+        args = DotMap(sellerInitializeArgs)
         registry = OTCRegistry.deploy(
             args.wethAddress,
             args.daoVaultAddress,
@@ -122,20 +123,21 @@ def deploy_registry(tx_params, constructorArgs):
     return registry
 
 
-def deploy(tx_params, registryConstructorArgs, constructorArgs):
+def deploy(tx_params, registryConstructorArgs, sellerInitializeArgs):
     # deployedState = read_or_update_state()
     registry = deploy_registry(tx_params, registryConstructorArgs)
 
-    args = DotMap(constructorArgs)
+    args = DotMap(sellerInitializeArgs)
     seller_address = registry.getSellerFor(args.sellTokenAddress, args.buyTokenAddress)
     if not registry.isSellerExists(seller_address):
         log.info(f"Deploying OTCSeller for tokens pair {args.sellTokenAddress}:{args.buyTokenAddress}...")
-        args = DotMap(constructorArgs)
+        args = DotMap(sellerInitializeArgs)
         tx = registry.createSeller(
             args.sellTokenAddress,
             args.buyTokenAddress,
             args.chainLinkPriceFeedAddress,
-            args.maxSlippage,
+            args.maxMargin,
+            args.constantPrice,
             tx_params,
         )
         log.info("> txHash:", tx.txid)
@@ -154,10 +156,10 @@ def deploy(tx_params, registryConstructorArgs, constructorArgs):
     return (registry, seller)
 
 
-def check_deployed(registry, seller, registryConstructorArgs, constructorArgs):
+def check_deployed(registry, seller, registryConstructorArgs, sellerInitializeArgs):
     assert registry.isSellerExists(seller.address) == True, "Incorrect seller deploy"
-    assert registry.getSellerFor(constructorArgs.sellTokenAddress, constructorArgs.buyTokenAddress) == seller.address, "Incorrect seller deploy"
-    assert registry.getSellerFor(constructorArgs.buyTokenAddress, constructorArgs.sellTokenAddress) == seller.address, "Incorrect seller deploy"
+    assert registry.getSellerFor(sellerInitializeArgs.sellTokenAddress, sellerInitializeArgs.buyTokenAddress) == seller.address, "Incorrect seller deploy"
+    assert registry.getSellerFor(sellerInitializeArgs.buyTokenAddress, sellerInitializeArgs.sellTokenAddress) == seller.address, "Incorrect seller deploy"
 
     impl = OTCSeller.at(registry.implementation())
     assert impl.DAO_VAULT() == registryConstructorArgs.daoVaultAddress, "Wrong Lido Agent address"
@@ -165,11 +167,15 @@ def check_deployed(registry, seller, registryConstructorArgs, constructorArgs):
 
     assert seller.DAO_VAULT() == registryConstructorArgs.daoVaultAddress, "Wrong Lido Agent address"
     assert seller.WETH() == registryConstructorArgs.wethAddress, "Wrong WETH address"
-    assert seller.sellToken() == constructorArgs.sellTokenAddress, "Wrong sellToken address"
-    assert seller.buyToken() == constructorArgs.buyTokenAddress, "Wrong buyToken address"
+    assert seller.tokenA() == sellerInitializeArgs.sellTokenAddress, "Wrong sellToken address"
+    assert seller.tokenB() == sellerInitializeArgs.buyTokenAddress, "Wrong buyToken address"
     assert seller.BENEFICIARY() == registryConstructorArgs.beneficiaryAddress, "Wrong beneficiary address"
-    assert seller.priceFeed() == constructorArgs.chainLinkPriceFeedAddress, "Wrong ChainLink price feed address"
-    assert seller.maxSlippage() == constructorArgs.maxSlippage, "Wrong max slippage"
+
+    (priceFeed, maxMargin, reverse, constPrice) = registry.getPairConfig(sellerInitializeArgs.sellTokenAddress,sellerInitializeArgs.buyTokenAddress )
+
+
+    assert priceFeed == sellerInitializeArgs.chainLinkPriceFeedAddress, "Wrong ChainLink price feed address"
+    assert maxMargin == sellerInitializeArgs.maxMargin, "Wrong max priceMargin"
 
 
 def start_dao_vote_transfer_eth_for_sell(tx_params, seller_address, sell_amount):

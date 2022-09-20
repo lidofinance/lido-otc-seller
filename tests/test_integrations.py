@@ -3,7 +3,7 @@ from brownie import chain, Wei, web3, reverts
 
 from utils.cow import api_create_order, api_get_sell_fee
 from utils.config import weth_token_address, dai_token_address, lido_dao_agent_address, cowswap_vault_relayer, PRE_SIGNED
-from otc_seller_config import MAX_SLIPPAGE
+from otc_seller_config import MAX_MARGIN
 
 SELL_AMOUNT = Wei("10000 ether")
 
@@ -15,7 +15,7 @@ def sell_amount():
 
 @pytest.fixture
 def registry_and_seller(deploy_seller_eth_for_dai):
-    return deploy_seller_eth_for_dai(receiver=lido_dao_agent_address, max_slippage=MAX_SLIPPAGE)
+    return deploy_seller_eth_for_dai(receiver=lido_dao_agent_address, max_margin=MAX_MARGIN)
 
 @pytest.fixture
 def seller(registry_and_seller):
@@ -40,14 +40,13 @@ def test_get_quotes(seller, sell_amount, fee_buy_amount):
     sell_token = weth_token_address
     buy_token = dai_token_address
     fee_amount, buy_amount = fee_buy_amount(sell_token=sell_token, buy_token=buy_token, sell_amount=sell_amount)
-    maxSlippage = seller.maxSlippage()
 
     # ensure the CowSwap offer is not worse than chainlink price
     # note: in the case of selling ETH for DAI, we should use reverse price
     # as the chainlink price feed returns the ETH amount for 1DAI
-    chainlink_price = seller.getChainlinkReversePrice()
+    (chainlink_price, max_margin) = seller.priceAndMaxMargin()
     # TODO: use token decimals
-    chainlink_buy_amount = chainlink_price * sell_amount * (10000 - maxSlippage) / 10000 / 10**18
+    chainlink_buy_amount = chainlink_price * sell_amount * (10000 - max_margin) / 10000 / 10**18
     assert chainlink_buy_amount <= buy_amount and chainlink_buy_amount > 0
 
 

@@ -3,7 +3,7 @@ from brownie import chain, reverts, Wei, OTCSeller
 from scripts.deploy import check_deployed
 
 from utils.config import lido_dao_agent_address, cowswap_vault_relayer, PRE_SIGNED, chainlink_dai_eth, weth_token_address, dai_token_address
-from otc_seller_config import MAX_SLIPPAGE
+from otc_seller_config import MAX_MARGIN
 
 SELL_AMOUNT = Wei("100 ether")
 
@@ -15,7 +15,7 @@ def sell_amount():
 
 @pytest.fixture
 def registry_and_seller(beneficiary, deploy_seller_eth_for_dai):
-    return deploy_seller_eth_for_dai(receiver=beneficiary, max_slippage=MAX_SLIPPAGE)
+    return deploy_seller_eth_for_dai(receiver=beneficiary, max_margin=MAX_MARGIN)
 
 
 @pytest.fixture
@@ -63,7 +63,8 @@ def settled_order(accounts, seller, beneficiary, sell_amount, make_order_sell_we
     valid_to = chain.time() + 3600
     fee_amount = sell_amount * 0.001
     # simulate good exchange rate
-    buy_amount = seller.getChainlinkReversePrice() * (sell_amount - fee_amount)
+    (chainlink_price, _) = seller.priceAndMaxMargin()
+    buy_amount = chainlink_price * (sell_amount - fee_amount)
 
     order = make_order_sell_weth_for_dai(sell_amount=sell_amount, buy_amount=buy_amount, fee_amount=fee_amount, receiver=beneficiary, valid_to=valid_to)
     orderUid = seller.getOrderUid(order)
@@ -73,10 +74,10 @@ def settled_order(accounts, seller, beneficiary, sell_amount, make_order_sell_we
     return (order, orderUid, tx)
 
 
-def test_deploy_params(registry, seller, beneficiary, deployRegistryConstructorArgs, deployConstructorArgs):
+def test_deploy_params(registry, seller, beneficiary, deployRegistryConstructorArgs, createSellerInitializeArgs):
     regArgs = deployRegistryConstructorArgs(receiver=beneficiary)
-    args = deployConstructorArgs(max_slippage=MAX_SLIPPAGE)
-    check_deployed(registry=registry, seller=seller, registryConstructorArgs=regArgs, constructorArgs=args)
+    args = createSellerInitializeArgs(max_margin=MAX_MARGIN)
+    check_deployed(registry=registry, seller=seller, registryConstructorArgs=regArgs, sellerInitializeArgs=args)
 
 
 def test_initialize(accounts, registry, seller):
@@ -84,27 +85,28 @@ def test_initialize(accounts, registry, seller):
     impl = OTCSeller.at(registry.implementation())
     # try initialize impl
     with reverts("Only registry can call"):
-        impl.initialize(dummyAddress, dummyAddress, dummyAddress, 111, {"from": accounts[0]})
+        impl.initialize(dummyAddress, dummyAddress, {"from": accounts[0]})
     # retry initialize
     with reverts("Initializable: contract is already initialized"):
-        seller.initialize(dummyAddress, dummyAddress, dummyAddress, 111, {"from": accounts[0]})
+        seller.initialize(dummyAddress, dummyAddress, {"from": accounts[0]})
 
 
-def test_retry_deploy_same_tokens(accounts, registry, deployConstructorArgs):
-    args = deployConstructorArgs(max_slippage=MAX_SLIPPAGE)
+def test_retry_deploy_same_tokens(accounts, registry, createSellerInitializeArgs):
+    args = createSellerInitializeArgs(max_margin=MAX_MARGIN)
     with reverts("Seller exists"):
-        registry.createSeller(args.sellTokenAddress, args.buyTokenAddress, args.chainLinkPriceFeedAddress, args.maxSlippage, {"from": accounts[0]})
+        registry.createSeller(args.sellTokenAddress, args.buyTokenAddress, args.chainLinkPriceFeedAddress, args.maxMargin, args.constantPrice, {"from": accounts[0]})
 
     # swap tokens
     with reverts("Seller exists"):
-        registry.createSeller(args.buyTokenAddress, args.sellTokenAddress, args.chainLinkPriceFeedAddress, args.maxSlippage, {"from": accounts[0]})
+        registry.createSeller(args.buyTokenAddress, args.sellTokenAddress, args.chainLinkPriceFeedAddress, args.maxMargin, args.constantPrice, {"from": accounts[0]})
 
 
-def test_get_chainlink_price(seller):
-    chainlink_price = seller.getChainlinkDirectPrice()
+def test_get_chainlink_price_and_max_margin(seller):
+    (chainlink_price, max_margin) = seller.priceAndMaxMargin()
+    (chainlink_reverse_price, max_margin) = seller.reversePriceAndMaxMargin()
+    print(chainlink_price, chainlink_reverse_price)
     assert chainlink_price > 0
-    chainlink_price = seller.getChainlinkReversePrice()
-    assert chainlink_price > 0
+    assert max_margin == MAX_MARGIN
 
 
 def test_settle_order(seller, sell_amount, settled_order, weth_token, dai_token, cow_settlement):
