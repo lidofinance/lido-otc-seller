@@ -9,10 +9,10 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {GPv2Order} from "./lib/GPv2Order.sol";
 import {AssetRecoverer} from "./lib/AssetRecoverer.sol";
 
-import {IChainlinkPriceFeedV3} from "./interfaces/IChainlinkPriceFeedV3.sol";
 import {IGPv2Settlement} from "./interfaces/IGPv2Settlement.sol";
 import {IWETH} from "./interfaces/IWETH.sol";
 import {IVault} from "./interfaces/IVault.sol";
+import {IOTCRegistry} from "./interfaces/IOTCRegistry.sol";
 
 contract OTCSeller is Initializable, AssetRecoverer {
     using SafeERC20 for IERC20;
@@ -37,14 +37,11 @@ contract OTCSeller is Initializable, AssetRecoverer {
     address public immutable BENEFICIARY;
     address public immutable registry;
 
-    struct SellerConfig {
+    struct Pair {
         address sellToken;
         address buyToken;
-        address priceFeed;
-        // The maximum allowable slippage that can be set, in BPS
-        uint16 maxSlippage; // e.g. 200 = 2%
     }
-    SellerConfig private _config;
+    Pair private _pair;
 
     constructor(
         address wethAddress,
@@ -66,21 +63,12 @@ contract OTCSeller is Initializable, AssetRecoverer {
     /// @notice sellToken and buyToken mast be set in order according chainlink price feed
     ///         i.e., in the case of selling ETH for DAI, the sellToken must be set to DAI,
     ///         as the chainlink price feed returns the ETH amount for 1DAI
-    function initialize(
-        address _sellToken,
-        address _buyToken,
-        address _priceFeed,
-        uint16 _maxSlippage
-    ) external initializer onlyRegistry {
+    function initialize(address _sellToken, address _buyToken) external initializer onlyRegistry {
         /// @notice contract works only with ERC20 compatile tokens
-        require(_sellToken != address(0) && _buyToken != address(0) && _priceFeed != address(0), "Zero address");
+        require(_sellToken != address(0) && _buyToken != address(0), "Zero address");
         require(_sellToken != _buyToken, "sellToken and buyToken must be different");
-        require(_maxSlippage <= 500, "maxSlippage too high");
 
-        _config.sellToken = _sellToken;
-        _config.buyToken = _buyToken;
-        _config.priceFeed = _priceFeed;
-        _config.maxSlippage = _maxSlippage;
+        _pair = Pair(_sellToken, _buyToken);
     }
 
     /// @dev allow contract to receive ETH
@@ -94,35 +82,16 @@ contract OTCSeller is Initializable, AssetRecoverer {
         revert();
     }
 
-    function sellToken() external view returns (address) {
-        return _config.sellToken;
+    function deposit(address token, uint256 amount) external {
+        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
     }
 
-    function buyToken() external view returns (address) {
-        return _config.buyToken;
+    function tokensPair() external view returns (address, address) {
+        return (_pair.sellToken, _pair.buyToken);
     }
 
-    function priceFeed() external view returns (address) {
-        return _config.priceFeed;
-    }
-
-    function maxSlippage() external view returns (uint16) {
-        return _config.maxSlippage;
-    }
-
-    /// @dev Returns the normalized price from Chainlink price feed
-    function getChainlinkDirectPrice() public view returns (uint256) {
-        IChainlinkPriceFeedV3 _priceFeed = IChainlinkPriceFeedV3(_config.priceFeed);
-        uint256 decimals = _priceFeed.decimals();
-        (, int256 price, , uint256 updated_at, ) = _priceFeed.latestRoundData();
-        require(updated_at != 0, "Unexpected price feed answer");
-        // normilize chainlink price to 18 decimals
-        return uint256(price) * (10**(18 - decimals));
-    }
-
-    /// @dev Returns the reversed normalized price from Chainlink price feed, i.e. 1/price
-    function getChainlinkReversePrice() public view returns (uint256) {
-        return 10**36 / getChainlinkDirectPrice();
+    function priceAndMaxSlippage() external view returns (uint256 price, uint16 slippage) {
+        return _getPriceAndMaxSlippage(_pair.sellToken, _pair.buyToken);
     }
 
     /// @dev Calculates OrderUid from Order Data
@@ -141,6 +110,7 @@ contract OTCSeller is Initializable, AssetRecoverer {
     ///         the execution of the sale on the Seller contract and transfer the tokens
     ///         through the .deposit () method
     function checkOrder(GPv2Order.Data calldata orderData, bytes calldata orderUid) public view returns (bool) {
+        _checkTokensPair(address(orderData.sellToken), address(orderData.buyToken));
         require(orderData.validTo > block.timestamp, "validTo in the past");
         // NOTE: receiver is the seller contract itself, since the Vault Agent cannot detect the direct transfer of the token, so it is necessary to complete the execution of the sale on the Seller contract and transfer the tokens through the .deposit () method
         require(orderData.receiver == BENEFICIARY, "Wrong receiver");
@@ -149,24 +119,19 @@ contract OTCSeller is Initializable, AssetRecoverer {
         require(orderData.sellTokenBalance == GPv2Order.BALANCE_ERC20, "Wrong order sellTokenBalance");
         require(orderData.buyTokenBalance == GPv2Order.BALANCE_ERC20, "Wrong order buyTokenBalance");
 
-        bool reverse = _checkTokensReverseOrder(orderData.sellToken, orderData.buyToken);
         // Verify we get the same ID
         bytes memory derivedOrderID = getOrderUid(orderData);
         require(keccak256(derivedOrderID) == keccak256(orderUid), "orderUid missmatch");
 
-        // TODO: This should be done by using a gas cost oracle (see Chainlink)
         require(orderData.feeAmount <= orderData.sellAmount / 10, "Order fee to high"); // Fee can be at most 1/10th of order
 
-        // Check the price we're agreeing to
-        uint16 slippage = _config.maxSlippage;
-
-        // get Chainlink direct price
-        uint256 chainlinkPrice = reverse ? getChainlinkReversePrice() : getChainlinkDirectPrice();
+        // Check the price we're agreeing to and max slippage
+        (uint256 price, uint16 slippage) = _getPriceAndMaxSlippage(address(orderData.sellToken), address(orderData.buyToken));
         uint8 tokenSellDecimals = orderData.sellToken.decimals();
         uint8 tokenBuyDecimals = orderData.buyToken.decimals();
 
         // chainlinkPrice is normilized to 1e18 decimals, so we need to adjust it
-        uint256 swapAmountOut = (orderData.sellAmount * chainlinkPrice * (MAX_BPS - slippage)) / MAX_BPS / 10**(18 + tokenSellDecimals - tokenBuyDecimals);
+        uint256 swapAmountOut = (orderData.sellAmount * price * (MAX_BPS - slippage)) / MAX_BPS / 10**(18 + tokenSellDecimals - tokenBuyDecimals);
 
         // Require that Cowswap is offering a better price or matching
         return (swapAmountOut <= orderData.buyAmount);
@@ -200,7 +165,7 @@ contract OTCSeller is Initializable, AssetRecoverer {
 
     /// @notice Can be called by anyone except case when token is sellToken or buyToken
     function recoverERC20(address token, uint256 amount) external {
-        if (token == _config.sellToken || token == _config.buyToken) {
+        if (token == _pair.sellToken || token == _pair.buyToken) {
             _checkBeneficiary();
         }
         _recoverERC20(token, BENEFICIARY, amount);
@@ -243,15 +208,15 @@ contract OTCSeller is Initializable, AssetRecoverer {
         require(msg.sender == BENEFICIARY, "Only beneficiary has access");
     }
 
-    function _checkTokensReverseOrder(IERC20 _sellToken, IERC20 _buyToken) internal view returns (bool) {
-        address _cfgSellToken = _config.sellToken;
-        address _cfgBuyToken = _config.buyToken;
-        if (address(_sellToken) == _cfgBuyToken && address(_buyToken) == _cfgSellToken) {
-            return true;
-        } else {
-            require(address(_sellToken) == _cfgSellToken, "Unsuported sellToken");
-            require(address(_buyToken) == _cfgBuyToken, "Unsuported buyToken");
-        }
-        return false;
+    function _checkTokensPair(address sellToken, address buyToken) internal view {
+        address _sellTokenn = _pair.sellToken;
+        address _buyToken = _pair.buyToken;
+        require((sellToken == _sellTokenn && buyToken == _buyToken) || (sellToken == _buyToken && buyToken == _sellTokenn), "Unsuported tokens pair");
+    }
+
+    function _getPriceAndMaxSlippage(address tokenA, address tokenB) internal view returns (uint256 price, uint16 slippage) {
+        (price, slippage) = IOTCRegistry(registry).getPriceAndMaxSlippage(tokenA, tokenB);
+        require(price > 0, "price not defined");
+        require(slippage > 0, "slippage not defined");
     }
 }
