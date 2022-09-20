@@ -1,5 +1,6 @@
+// SPDX-FileCopyrightText: 2022 Lido <info@lido.fi>
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.15;
+pragma solidity 0.8.10;
 
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 /// @notice IERC20Metadata is used to support .decimals() method
@@ -37,11 +38,8 @@ contract OTCSeller is Initializable, AssetRecoverer {
     address public immutable BENEFICIARY;
     address public immutable registry;
 
-    struct Pair {
-        address sellToken;
-        address buyToken;
-    }
-    Pair private _pair;
+    address public tokenA;
+    address public tokenB;
 
     constructor(
         address wethAddress,
@@ -63,12 +61,13 @@ contract OTCSeller is Initializable, AssetRecoverer {
     /// @notice sellToken and buyToken mast be set in order according chainlink price feed
     ///         i.e., in the case of selling ETH for DAI, the sellToken must be set to DAI,
     ///         as the chainlink price feed returns the ETH amount for 1DAI
-    function initialize(address _sellToken, address _buyToken) external initializer onlyRegistry {
-        /// @notice contract works only with ERC20 compatile tokens
-        require(_sellToken != address(0) && _buyToken != address(0), "Zero address");
-        require(_sellToken != _buyToken, "sellToken and buyToken must be different");
+    function initialize(address _tokenA, address _tokenB) external initializer onlyRegistry {
+        /// @notice contract works only with ERC20 compatible tokens
+        require(_tokenA != address(0) && _tokenB != address(0), "Zero address");
+        require(_tokenA != _tokenB, "tokenA and tokenB must be different");
 
-        _pair = Pair(_sellToken, _buyToken);
+        tokenA = _tokenA;
+        tokenB = _tokenB;
     }
 
     /// @dev allow contract to receive ETH
@@ -86,12 +85,16 @@ contract OTCSeller is Initializable, AssetRecoverer {
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
     }
 
-    function tokensPair() external view returns (address, address) {
-        return (_pair.sellToken, _pair.buyToken);
+    // function tokensPair() external view returns (address, address) {
+    //     return (tokenA, tokenB);
+    // }
+
+    function priceAndMaxMargin() external view returns (uint256 price, uint16 maxMargin) {
+        return _getPriceAndMaxMargin(tokenA, tokenB);
     }
 
-    function priceAndMaxSlippage() external view returns (uint256 price, uint16 slippage) {
-        return _getPriceAndMaxSlippage(_pair.sellToken, _pair.buyToken);
+    function reversePriceAndMaxMargin() external view returns (uint256 price, uint16 maxMargin) {
+        return _getPriceAndMaxMargin(tokenB, tokenA);
     }
 
     /// @dev Calculates OrderUid from Order Data
@@ -105,14 +108,10 @@ contract OTCSeller is Initializable, AssetRecoverer {
     }
 
     /// @dev General order data checks.
-    /// @notice receiver is the seller contract itself, since the Vault Agent
-    ///         cannot detect the direct transfer of the token, so it is necessary to complete
-    ///         the execution of the sale on the Seller contract and transfer the tokens
-    ///         through the .deposit () method
+    /// @notice The receiver must be a "beneficiary" to avoid the purchased tokens appearing on the contract address
     function checkOrder(GPv2Order.Data calldata orderData, bytes calldata orderUid) public view returns (bool) {
         _checkTokensPair(address(orderData.sellToken), address(orderData.buyToken));
         require(orderData.validTo > block.timestamp, "validTo in the past");
-        // NOTE: receiver is the seller contract itself, since the Vault Agent cannot detect the direct transfer of the token, so it is necessary to complete the execution of the sale on the Seller contract and transfer the tokens through the .deposit () method
         require(orderData.receiver == BENEFICIARY, "Wrong receiver");
         require(orderData.partiallyFillable == false, "Partially fill not allowed");
         require(orderData.kind == GPv2Order.KIND_SELL, "Wrong order kind");
@@ -121,20 +120,20 @@ contract OTCSeller is Initializable, AssetRecoverer {
 
         // Verify we get the same ID
         bytes memory derivedOrderID = getOrderUid(orderData);
-        require(keccak256(derivedOrderID) == keccak256(orderUid), "orderUid missmatch");
+        require(keccak256(derivedOrderID) == keccak256(orderUid), "orderUid mismatch");
 
         require(orderData.feeAmount <= orderData.sellAmount / 10, "Order fee to high"); // Fee can be at most 1/10th of order
 
-        // Check the price we're agreeing to and max slippage
-        (uint256 price, uint16 slippage) = _getPriceAndMaxSlippage(address(orderData.sellToken), address(orderData.buyToken));
+        // Check the price we're agreeing to and max price margin
+        (uint256 price, uint16 maxMargin) = _getPriceAndMaxMargin(address(orderData.sellToken), address(orderData.buyToken));
         uint8 tokenSellDecimals = orderData.sellToken.decimals();
         uint8 tokenBuyDecimals = orderData.buyToken.decimals();
 
-        // chainlinkPrice is normilized to 1e18 decimals, so we need to adjust it
-        uint256 swapAmountOut = (orderData.sellAmount * price * (MAX_BPS - slippage)) / MAX_BPS / 10**(18 + tokenSellDecimals - tokenBuyDecimals);
+        // chainlinkPrice is normalized to 1e18 decimals, so we need to adjust it
+        uint256 minAcceptableBuyAmount = ((orderData.sellAmount * price * (MAX_BPS - maxMargin)) / MAX_BPS) / (10**(18 + tokenSellDecimals - tokenBuyDecimals));
 
         // Require that Cowswap is offering a better price or matching
-        return (swapAmountOut <= orderData.buyAmount);
+        return (minAcceptableBuyAmount <= orderData.buyAmount);
     }
 
     /// @dev Function to perform a swap on Cowswap via this smart contract
@@ -164,43 +163,48 @@ contract OTCSeller is Initializable, AssetRecoverer {
     }
 
     /// @notice Can be called by anyone except case when token is sellToken or buyToken
-    function recoverERC20(address token, uint256 amount) external {
-        if (token == _pair.sellToken || token == _pair.buyToken) {
+    function transferERC20(address token, uint256 amount) external {
+        if (token == tokenA || token == tokenB) {
             _checkBeneficiary();
         }
-        _recoverERC20(token, BENEFICIARY, amount);
+        _transferERC20(token, BENEFICIARY, amount);
     }
 
     /// @notice Can be called by anyone
-    function recoverEther(uint256 amount) external {
-        _recoverEther(BENEFICIARY, amount);
+    function transferEther(uint256 amount) external {
+        _transferEther(BENEFICIARY, amount);
     }
 
     /// @notice Can be called by anyone
-    function recoverERC721(address token, uint256 tokenId) external {
-        _recoverERC721(token, tokenId, BENEFICIARY);
-    }
-
-    /// @notice Can be called by anyone
-    function recoverERC1155(
+    function transferERC721(
         address token,
         uint256 tokenId,
-        uint256 amount
+        bytes calldata data
     ) external {
-        _recoverERC1155(token, tokenId, BENEFICIARY, amount);
+        _transferERC721(token, BENEFICIARY, tokenId, data);
     }
 
-    function _recoverERC20(
+    /// @notice Can be called by anyone
+    function transferERC1155(
+        address token,
+        uint256 tokenId,
+        uint256 amount,
+        bytes calldata data
+    ) external {
+        _transferERC1155(token, BENEFICIARY, tokenId, amount, data);
+    }
+
+    function _transferERC20(
         address token,
         address recipient,
         uint256 amount
     ) internal virtual override {
         if (recipient == DAO_VAULT) {
-            IERC20(token).safeIncreaseAllowance(DAO_VAULT, amount);
+            IERC20(token).safeIncreaseAllowance(recipient, amount);
             IVault(DAO_VAULT).deposit(token, amount);
-            emit ERC20Recovered(token, DAO_VAULT, amount);
+            emit ERC20Transferred(token, recipient, amount);
         } else {
-            super._recoverERC20(token, recipient, amount);
+            super._transferERC20(token, recipient, amount);
         }
     }
 
@@ -209,14 +213,14 @@ contract OTCSeller is Initializable, AssetRecoverer {
     }
 
     function _checkTokensPair(address sellToken, address buyToken) internal view {
-        address _sellTokenn = _pair.sellToken;
-        address _buyToken = _pair.buyToken;
-        require((sellToken == _sellTokenn && buyToken == _buyToken) || (sellToken == _buyToken && buyToken == _sellTokenn), "Unsuported tokens pair");
+        address _sellToken = tokenA;
+        address _buyToken = tokenB;
+        require((sellToken == _sellToken && buyToken == _buyToken) || (sellToken == _buyToken && buyToken == _sellToken), "Unsuported tokens pair");
     }
 
-    function _getPriceAndMaxSlippage(address tokenA, address tokenB) internal view returns (uint256 price, uint16 slippage) {
-        (price, slippage) = IOTCRegistry(registry).getPriceAndMaxSlippage(tokenA, tokenB);
+    function _getPriceAndMaxMargin(address sellToken, address buyToken) internal view returns (uint256 price, uint16 maxMargin) {
+        (price, maxMargin) = IOTCRegistry(registry).getPriceAndMaxMargin(sellToken, buyToken);
         require(price > 0, "price not defined");
-        require(slippage > 0, "slippage not defined");
+        require(maxMargin > 0, "maxMargin not defined");
     }
 }
