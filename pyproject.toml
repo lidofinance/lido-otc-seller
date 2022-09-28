@@ -14,7 +14,7 @@ dotmap = "^1.3.30"
 
 [tool.poetry.dev-dependencies]
 black = "~22.6.0"
-slither = "^0.3.0"
+slither-analyzer = "^0.8.3"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
