@@ -8,7 +8,7 @@ from utils.helpers import formatUnit, parseUnit
 import utils.log as log
 from scripts.deploy import check_deployed, deploy_registry, deploy_seller, get_token_data, make_initialize_args, make_order, make_registry_constructor_args
 from utils.config import weth_token_address, lido_dao_agent_address
-from otc_seller_config import SELL_TOKEN, BUY_TOKEN, PRICE_FEED, BENEFICIARY, MAX_MARGIN
+from otc_seller_config import SELL_TOKEN, BUY_TOKEN, PRICE_FEED, BENEFICIARY, MAX_MARGIN, CONST_PRICE
 
 # environment
 WEB3_INFURA_PROJECT_ID = get_env("WEB3_INFURA_PROJECT_ID")
@@ -82,7 +82,7 @@ def main():
     for k, v in regArgs.items():
         log.note(k, v)
 
-    args = make_initialize_args(sell_toke=SELL_TOKEN, buy_token=BUY_TOKEN, price_feed=PRICE_FEED, max_margin=MAX_MARGIN, const_price=0)
+    args = make_initialize_args(sell_toke=SELL_TOKEN, buy_token=BUY_TOKEN, price_feed=PRICE_FEED, max_margin=MAX_MARGIN, const_price=CONST_PRICE or 0)
 
     [_, sellTokenSymbol, _] = get_token_data(SELL_TOKEN)
     [_, buyTokenSymbol, _] = get_token_data(BUY_TOKEN)
@@ -117,7 +117,7 @@ def main():
     log.note("All deployed metadata saved to", f"./deployed-{network.show_active()}.json")
 
 
-def deploySeller(sellTokenAddress, buyTokenAddress, priceFeedAddress, maxMargin=MAX_MARGIN, constPrice=0):
+def deploySeller(sellTokenAddress, buyTokenAddress, priceFeedAddress, maxMargin=MAX_MARGIN, constPrice=CONST_PRICE or 0):
     log.info("-= OTCSeller deploy =-")
 
     checkEnv()
