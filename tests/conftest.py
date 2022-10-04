@@ -2,7 +2,14 @@ import sys
 import pytest
 from brownie import chain, web3
 import utils.log as log
-from scripts.deploy import deploy, make_registry_constructor_args, start_dao_vote_transfer_eth_for_sell, make_order, make_initialize_args
+from scripts.deploy import (
+    deploy_registry,
+    deploy_seller,
+    make_registry_constructor_args,
+    start_dao_vote_transfer_eth_for_sell,
+    make_order,
+    make_initialize_args,
+)
 
 from utils.config import (
     weth_token_address,
@@ -186,7 +193,9 @@ def deploy_seller_eth_for_dai(accounts, deployRegistryConstructorArgs, createSel
     def run(receiver, max_margin):
         registryConstructorArgs = deployRegistryConstructorArgs(receiver)
         sellerInitializeArgs = createSellerInitializeArgs(max_margin)
-        return deploy({"from": accounts[0]}, registryConstructorArgs, sellerInitializeArgs)
+        registry = deploy_registry({"from": accounts[0]}, registryConstructorArgs)
+        seller = deploy_seller({"from": accounts[0]}, sellerInitializeArgs, registry.address)
+        return (registry, seller)
 
     return run
 

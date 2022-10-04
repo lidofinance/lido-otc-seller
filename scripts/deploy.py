@@ -96,8 +96,8 @@ def deploy_registry(tx_params, sellerInitializeArgs):
     deployedState = read_or_update_state()
 
     if deployedState.registryAddress:
-        log.warn("OTCRegistry already deployed at", deployedState.registryAddress)
         registry = OTCRegistry.at(deployedState.registryAddress)
+        log.warn("OTCRegistry already deployed at", deployedState.registryAddress)
     else:
         log.info("Deploying OTCRegistry...")
         args = DotMap(sellerInitializeArgs)
@@ -123,15 +123,53 @@ def deploy_registry(tx_params, sellerInitializeArgs):
     return registry
 
 
-def deploy(tx_params, registryConstructorArgs, sellerInitializeArgs):
-    # deployedState = read_or_update_state()
-    registry = deploy_registry(tx_params, registryConstructorArgs)
+def find_deployed_seller_index(sellers, sellerAddress):
+    for index, x in enumerate(sellers):
+        if x.sellerAddress == sellerAddress:
+            return index
+    return -1
+
+
+def get_token_data(tokenAddress):
+    token = interface.ERC20(tokenAddress)
+    decimals = token.decimals()
+    symbol = token.symbol()
+    return (token, symbol, decimals)
+
+
+def deploy_seller(tx_params, sellerInitializeArgs, registryAddress=None):
+    deployedState = read_or_update_state()
+    if not registryAddress:
+        if not deployedState.registryAddress:
+            log.error("Registry is not defined/deployed")
+            exit()
+        registryAddress = deployedState.registryAddress
+    registry = OTCRegistry.at(registryAddress)
+    log.info(f"Using registry at", registryAddress)
+
+    owner = registry.owner()
+    if owner != tx_params["from"]:
+        log.error("Deployer is not registry owner! If the owner is DAO Agent, this action should be performed as part of the voting execution")
+        exit()
 
     args = DotMap(sellerInitializeArgs)
-    seller_address = registry.getSellerFor(args.sellTokenAddress, args.buyTokenAddress)
-    if not registry.isSellerExists(seller_address):
-        log.info(f"Deploying OTCSeller for tokens pair {args.sellTokenAddress}:{args.buyTokenAddress}...")
-        args = DotMap(sellerInitializeArgs)
+    sellerAddress = registry.getSellerFor(args.sellTokenAddress, args.buyTokenAddress)
+    sellers = deployedState.sellers or []
+    sellerIndex = find_deployed_seller_index(sellers, sellerAddress)
+    if sellerIndex == -1:
+        sellerInfo = DotMap({"sellerAddress": sellerAddress})
+        sellerIndex = len(sellers)
+        sellers.append(sellerInfo)
+    else:
+        sellerInfo = DotMap(sellers[sellerIndex])
+
+    [_, sellTokenASymbol, _] = get_token_data(args.sellTokenAddress)
+    [_, buyTokenBSymbol, _] = get_token_data(args.buyTokenAddress)
+    if registry.isSellerExists(sellerAddress):
+        log.warn(f"Seller for {sellTokenASymbol}:{buyTokenBSymbol} already deployed at", sellerAddress)
+    else:
+        log.info("Deploying OTCSeller for tokens pair", f"{sellTokenASymbol}:{buyTokenBSymbol}")
+
         tx = registry.createSeller(
             args.sellTokenAddress,
             args.buyTokenAddress,
@@ -141,19 +179,38 @@ def deploy(tx_params, registryConstructorArgs, sellerInitializeArgs):
             tx_params,
         )
         log.info("> txHash:", tx.txid)
-        deployedState = read_or_update_state(
-            {
-                "seller0DeployTx": tx.txid,
-                "seller0Address": seller_address,
-                "seller0DeployConstructorArgs": args.toDict(),
-            }
-        )
-        log.okay("OTCSeller deployed at", seller_address)
-    else:
-        log.warn("Seller already deployed at", seller_address)
-    seller = OTCSeller.at(seller_address)
+        log.okay("OTCSeller deployed at", sellerAddress)
+        sellerInfo.sellerDeployTx = tx.txid
+        sellerInfo.sellerDeployConstructorArgs = (args.toDict(),)
 
-    return (registry, seller)
+    seller = OTCSeller.at(sellerAddress)
+
+    log.info("Updating seller deployed info...")
+    [priceFeed, maxMargin, _, constantPrice] = registry.getPairConfig(args.sellTokenAddress, args.buyTokenAddress)
+    sellerInfo.pairConfig = {
+        "chainLinkPriceFeedAddress": priceFeed,
+        "maxMargin": maxMargin,
+        "constantPrice": constantPrice,
+    }
+    sellerInfo.tokenA = seller.tokenA()
+    [_, sellerInfo.tokenASymbol, _] = get_token_data(sellerInfo.tokenA)
+    sellerInfo.tokenB = seller.tokenB()
+    [_, sellerInfo.tokenBSymbol, _] = get_token_data(sellerInfo.tokenB)
+
+    sellers[sellerIndex] = sellerInfo
+    deployedState = read_or_update_state(
+        {
+            "sellers": sellers,
+        }
+    )
+
+    return seller
+
+
+# def deploy(tx_params, registryConstructorArgs, sellerInitializeArgs):
+#     registry = deploy_registry(tx_params, registryConstructorArgs)
+#     seller = deploy_seller(tx_params, sellerInitializeArgs)
+#     return (registry, seller)
 
 
 def check_deployed(registry, seller, registryConstructorArgs, sellerInitializeArgs):

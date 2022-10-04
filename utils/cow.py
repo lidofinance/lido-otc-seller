@@ -42,6 +42,14 @@ def api_get_quote(sell_token, buy_token, sell_amount, valid_to, sender, partiall
     return (fee_amount, buy_amount_after_fee)
 
 
+def api_get_order_status(orderUid, network="mainnet"):
+    order_url = f"https://api.cow.fi/{network}/api/v1/orders/{orderUid}"
+    r = requests.get(order_url)
+    assert r.ok and r.status_code == 200
+    status = r.json()["status"]
+    return status
+
+
 def api_create_order(
     sell_token,
     buy_token,
