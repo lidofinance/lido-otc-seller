@@ -143,8 +143,8 @@ def deploySeller(sellTokenAddress, buyTokenAddress, priceFeedAddress, maxMargin=
     seller = deploy_seller({"from": deployer}, args)
 
 
-def settleOrder(sellTokenAddress, buyTokenAddress, sellAmount, validPeriod=3600):
-    log.info("-= Create and settle order =-")
+def signOrder(sellTokenAddress, buyTokenAddress, sellAmount, validPeriod=3600):
+    log.info("-= Create and sign order =-")
 
     txExecutor = loadAccount("EXECUTOR")
 
@@ -181,7 +181,7 @@ def settleOrder(sellTokenAddress, buyTokenAddress, sellAmount, validPeriod=3600)
     validTo = chain.time() + validPeriod
     appData = "0x0000000000000000000000000000000000000000000000000000000000000000"
 
-    log.info("Order ready for settle", f"{sellTokenSymbol} -> {buyTokenSymbol}")
+    log.info("Order ready for sign", f"{sellTokenSymbol} -> {buyTokenSymbol}")
     log.note("sellToken", f"{sellTokenAddress} ({sellTokenSymbol})")
     log.note("buyToken", f"{buyTokenAddress} ({buyTokenSymbol})")
     log.note("sellAmount", f"{formatUnit(sellAmount, sellTokenDecimals)}{sellTokenSymbol}")
@@ -242,13 +242,13 @@ def settleOrder(sellTokenAddress, buyTokenAddress, sellAmount, validPeriod=3600)
         log.error("Wrong order status, aborting...")
         exit()
 
-    log.info("Sending settle order tx...")
-    tx = seller.settleOrder(order, orderUid, {"from": txExecutor})
-    assert "OrderSettled" in tx.events
-    assert tx.events["OrderSettled"]["orderUid"] == orderUid
+    log.info("Sending sign order tx...")
+    tx = seller.signOrder(order, orderUid, {"from": txExecutor})
+    assert "OrderSigned" in tx.events
+    assert tx.events["OrderSigned"]["orderUid"] == orderUid
     assert "PreSignature" in tx.events
     assert tx.events["PreSignature"]["orderUid"] == orderUid
     assert tx.events["PreSignature"]["signed"] == True
 
     log.info("> txHash:", tx.txid)
-    log.okay("Order settled")
+    log.okay("Order signed")

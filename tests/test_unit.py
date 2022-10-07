@@ -59,7 +59,7 @@ def simulate_seller_refill(accounts, seller, weth_token):
 
 
 @pytest.fixture
-def settled_order(accounts, seller, beneficiary, sell_amount, make_order_sell_weth_for_dai, simulate_seller_refill, weth_token):
+def signed_order(accounts, seller, beneficiary, sell_amount, make_order_sell_weth_for_dai, simulate_seller_refill, weth_token):
     valid_to = chain.time() + 3600
     fee_amount = sell_amount * 0.001
     # simulate good exchange rate
@@ -70,7 +70,7 @@ def settled_order(accounts, seller, beneficiary, sell_amount, make_order_sell_we
     orderUid = seller.getOrderUid(order)
 
     simulate_seller_refill(sell_amount)
-    tx = seller.settleOrder(order, orderUid, {"from": accounts[0]})
+    tx = seller.signOrder(order, orderUid, {"from": accounts[0]})
     return (order, orderUid, tx)
 
 
@@ -113,10 +113,10 @@ def test_get_chainlink_price_and_max_margin(seller):
     assert max_margin == MAX_MARGIN
 
 
-def test_settle_order(seller, sell_amount, settled_order, weth_token, dai_token, cow_settlement):
-    (_, orderUid, tx) = settled_order
-    assert "OrderSettled" in tx.events
-    assert tx.events["OrderSettled"]["orderUid"] == orderUid
+def test_sign_order(seller, sell_amount, signed_order, weth_token, dai_token, cow_settlement):
+    (_, orderUid, tx) = signed_order
+    assert "OrderSigned" in tx.events
+    assert tx.events["OrderSigned"]["orderUid"] == orderUid
     assert "PreSignature" in tx.events
     assert tx.events["PreSignature"]["orderUid"] == orderUid
     assert tx.events["PreSignature"]["signed"] == True
@@ -125,8 +125,8 @@ def test_settle_order(seller, sell_amount, settled_order, weth_token, dai_token,
     assert cow_settlement.preSignature(orderUid) == PRE_SIGNED
 
 
-def test_cancel_order(accounts, seller, beneficiary, settled_order, cow_settlement):
-    (_, orderUid, tx) = settled_order
+def test_cancel_order(accounts, seller, beneficiary, signed_order, cow_settlement):
+    (_, orderUid, tx) = signed_order
 
     with reverts():
         seller.cancelOrder(orderUid, {"from": accounts[0]})

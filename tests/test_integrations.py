@@ -78,7 +78,7 @@ def test_create_and_check_order(seller, sell_amount, app_data, make_order_sell_w
     assert seller.checkOrder(order, orderUid) == True
 
 
-def test_settle_order(
+def test_sign_order(
     accounts, seller, sell_amount, fee_buy_amount, make_order_sell_weth_for_dai, transfer_eth_for_sell_and_pass_dao_vote, weth_token, cow_settlement
 ):
 
@@ -97,13 +97,13 @@ def test_settle_order(
     orderUid = seller.getOrderUid(order)
 
     allowanceBefore = weth_token.allowance(seller.address, cowswap_vault_relayer)
-    tx = seller.settleOrder(order, orderUid, {"from": accounts[0]})
+    tx = seller.signOrder(order, orderUid, {"from": accounts[0]})
 
     assert weth_token.allowance(seller.address, cowswap_vault_relayer) >= allowanceBefore + sell_amount
     assert cow_settlement.preSignature(orderUid) == PRE_SIGNED
 
-    assert "OrderSettled" in tx.events
-    assert tx.events["OrderSettled"]["orderUid"] == orderUid
+    assert "OrderSigned" in tx.events
+    assert tx.events["OrderSigned"]["orderUid"] == orderUid
     assert "PreSignature" in tx.events
     assert tx.events["PreSignature"]["orderUid"] == orderUid
     assert tx.events["PreSignature"]["signed"] == True
@@ -125,7 +125,7 @@ def test_cancel_order(
     # skipping real order place and get orderUid directly
     orderUid = seller.getOrderUid(order)
 
-    tx = seller.settleOrder(order, orderUid, {"from": accounts[0]})
+    tx = seller.signOrder(order, orderUid, {"from": accounts[0]})
     with reverts():
         seller.cancelOrder(orderUid, {"from": accounts[0]})
 

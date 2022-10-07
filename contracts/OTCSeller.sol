@@ -28,7 +28,7 @@ contract OTCSeller is Initializable, AssetRecoverer {
     address public constant GP_V2_SETTLEMENT = 0x9008D19f58AAbD9eD0D60971565AA8510560ab41;
 
     // events
-    event OrderSettled(address indexed caller, bytes orderUid, address sellToken, address buyToken, uint256 sellAmount, uint256 buyAmount);
+    event OrderSigned(address indexed caller, bytes orderUid, address sellToken, address buyToken, uint256 sellAmount, uint256 buyAmount);
     event OrderCanceled(address indexed caller, bytes orderUid);
 
     /// WETH or analog address
@@ -138,17 +138,17 @@ contract OTCSeller is Initializable, AssetRecoverer {
 
     /// @dev Function to perform a swap on Cowswap via this smart contract
     /// @notice Can be called by anyone
-    function settleOrder(GPv2Order.Data calldata orderData, bytes calldata orderUid) external payable {
+    function signOrder(GPv2Order.Data calldata orderData, bytes calldata orderUid) external payable {
         require(checkOrder(orderData, orderUid), "buyAmount too low");
 
         orderData.sellToken.safeIncreaseAllowance(GP_V2_VAULT_RELAYER, orderData.sellAmount);
         // setPresignature to order will happen
         IGPv2Settlement(GP_V2_SETTLEMENT).setPreSignature(orderUid, true);
 
-        emit OrderSettled(msg.sender, orderUid, address(orderData.sellToken), address(orderData.buyToken), orderData.sellAmount, orderData.buyAmount);
+        emit OrderSigned(msg.sender, orderUid, address(orderData.sellToken), address(orderData.buyToken), orderData.sellAmount, orderData.buyAmount);
     }
 
-    /// @dev Cancel settled but not yet filled order
+    /// @dev Cancel signed but not yet filled order
     /// @notice Can be called only by beneficiary
     function cancelOrder(bytes calldata orderUid) external {
         _checkBeneficiary();
@@ -215,7 +215,7 @@ contract OTCSeller is Initializable, AssetRecoverer {
     function _checkTokensPair(address sellToken, address buyToken) internal view {
         address _sellToken = tokenA;
         address _buyToken = tokenB;
-        require((sellToken == _sellToken && buyToken == _buyToken) || (sellToken == _buyToken && buyToken == _sellToken), "Unsuported tokens pair");
+        require((sellToken == _sellToken && buyToken == _buyToken) || (sellToken == _buyToken && buyToken == _sellToken), "Unsupported tokens pair");
     }
 
     function _getPriceAndMaxMargin(address sellToken, address buyToken) internal view returns (uint256 price, uint16 maxMargin) {

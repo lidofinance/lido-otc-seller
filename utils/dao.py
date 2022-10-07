@@ -30,7 +30,7 @@ def encode_wrap_eth(weth):
     )
 
 
-# def encode_settle_order(
+# def encode_sign_order(
 #     sell_token,
 #     buy_token,
 #     receiver,
@@ -60,7 +60,7 @@ def encode_wrap_eth(weth):
 
 #     return (
 #         seller.address,
-#         seller.settleOrder.encode_input(
+#         seller.signOrder.encode_input(
 #             [
 #                 sell_token,
 #                 buy_token,
