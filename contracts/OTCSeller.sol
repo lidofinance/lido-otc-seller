@@ -73,6 +73,7 @@ contract OTCSeller is Initializable, AssetRecoverer {
     /// @dev allow contract to receive ETH
     /// @notice all received ETH are converted to WETH due to CowSwap only works with WETH
     receive() external payable {
+        require(tokenA == WETH || tokenB == WETH, "ETH not accepted");
         // wrap all income ETH to WETH
         IWETH(WETH).deposit{value: msg.value}();
     }
@@ -80,14 +81,6 @@ contract OTCSeller is Initializable, AssetRecoverer {
     fallback() external {
         revert();
     }
-
-    function deposit(address token, uint256 amount) external {
-        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
-    }
-
-    // function tokensPair() external view returns (address, address) {
-    //     return (tokenA, tokenB);
-    // }
 
     function priceAndMaxMargin() external view returns (uint256 price, uint16 maxMargin) {
         return _getPriceAndMaxMargin(tokenA, tokenB);
