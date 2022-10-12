@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2022 Lido <info@lido.fi>
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity 0.8.10;
 
 /// @dev Minified CowSwap GPv2Settlement interface
 interface IGPv2Settlement {
