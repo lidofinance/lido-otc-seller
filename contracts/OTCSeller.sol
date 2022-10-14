@@ -100,39 +100,54 @@ contract OTCSeller is Initializable, AssetRecoverer {
         return orderUid;
     }
 
+    /// @dev Get min acceptable amount to buy (according priceFeed and maxMargin)
+    function minBuyAmount(
+        IERC20 sellToken,
+        IERC20 buyToken,
+        uint256 sellAmount
+    ) public view returns (uint256 buyAmount) {
+        // Check the price we're agreeing to and max price margin
+        (uint256 price, uint16 maxMargin) = _getPriceAndMaxMargin(address(sellToken), address(buyToken));
+        uint8 tokenSellDecimals = sellToken.decimals();
+        uint8 tokenBuyDecimals = buyToken.decimals();
+
+        // chainlinkPrice is normalized to 1e18 decimals, so we need to adjust it
+        buyAmount = ((sellAmount * price * (MAX_BPS - maxMargin)) / MAX_BPS) / (10**(18 + tokenSellDecimals - tokenBuyDecimals));
+    }
+
     /// @dev General order data checks.
     /// @notice The receiver must be a "beneficiary" to avoid the purchased tokens appearing on the contract address
-    function checkOrder(GPv2Order.Data calldata orderData, bytes calldata orderUid) public view returns (bool) {
-        _checkTokensPair(address(orderData.sellToken), address(orderData.buyToken));
-        require(orderData.validTo > block.timestamp, "validTo in the past");
-        require(orderData.receiver == BENEFICIARY, "Wrong receiver");
-        require(orderData.partiallyFillable == false, "Partially fill not allowed");
-        require(orderData.kind == GPv2Order.KIND_SELL, "Wrong order kind");
-        require(orderData.sellTokenBalance == GPv2Order.BALANCE_ERC20, "Wrong order sellTokenBalance");
-        require(orderData.buyTokenBalance == GPv2Order.BALANCE_ERC20, "Wrong order buyTokenBalance");
+    function checkOrder(GPv2Order.Data calldata orderData, bytes calldata orderUid) public view returns (bool success, string memory result) {
+        result = _checkTokensPair(address(orderData.sellToken), address(orderData.buyToken));
+        if (bytes(result).length > 0) return (false, result);
+        result = _checkOrderParams(orderData);
+        if (bytes(result).length > 0) return (false, result);
 
         // Verify we get the same ID
         bytes memory derivedOrderID = getOrderUid(orderData);
-        require(keccak256(derivedOrderID) == keccak256(orderUid), "orderUid mismatch");
+        if (keccak256(derivedOrderID) != keccak256(orderUid)) {
+            return (false, "orderUid mismatch");
+        }
 
-        require(orderData.feeAmount <= orderData.sellAmount / 10, "Order fee to high"); // Fee can be at most 1/10th of order
+        if (orderData.feeAmount > orderData.sellAmount / 10) {
+            // Fee can be at most 1/10th of order
+            return (false, "Order fee to high");
+        }
 
-        // Check the price we're agreeing to and max price margin
-        (uint256 price, uint16 maxMargin) = _getPriceAndMaxMargin(address(orderData.sellToken), address(orderData.buyToken));
-        uint8 tokenSellDecimals = orderData.sellToken.decimals();
-        uint8 tokenBuyDecimals = orderData.buyToken.decimals();
-
-        // chainlinkPrice is normalized to 1e18 decimals, so we need to adjust it
-        uint256 minAcceptableBuyAmount = ((orderData.sellAmount * price * (MAX_BPS - maxMargin)) / MAX_BPS) / (10**(18 + tokenSellDecimals - tokenBuyDecimals));
+        uint256 minAcceptableBuyAmount = minBuyAmount(orderData.sellToken, orderData.buyToken, orderData.sellAmount);
 
         // Require that Cowswap is offering a better price or matching
-        return (minAcceptableBuyAmount <= orderData.buyAmount);
+        if (minAcceptableBuyAmount > orderData.buyAmount) {
+            return (false, "buyAmount too low");
+        }
+        return (true, "");
     }
 
     /// @dev Function to perform a swap on Cowswap via this smart contract
     /// @notice Can be called by anyone
     function signOrder(GPv2Order.Data calldata orderData, bytes calldata orderUid) external payable {
-        require(checkOrder(orderData, orderUid), "buyAmount too low");
+        (bool checked, string memory result) = checkOrder(orderData, orderUid);
+        require(checked, result);
 
         orderData.sellToken.safeIncreaseAllowance(GP_V2_VAULT_RELAYER, orderData.sellAmount);
         // setPresignature to order will happen
@@ -174,7 +189,7 @@ contract OTCSeller is Initializable, AssetRecoverer {
         uint256 tokenId,
         bytes calldata data
     ) external {
-        _transferERC721(token, BENEFICIARY, tokenId, data);
+        if (token == tokenA || token == tokenB) _transferERC721(token, BENEFICIARY, tokenId, data);
     }
 
     /// @notice Can be called by anyone
@@ -205,10 +220,21 @@ contract OTCSeller is Initializable, AssetRecoverer {
         require(msg.sender == BENEFICIARY, "Only beneficiary has access");
     }
 
-    function _checkTokensPair(address sellToken, address buyToken) internal view {
+    function _checkTokensPair(address sellToken, address buyToken) internal view returns (string memory resut) {
         address _sellToken = tokenA;
         address _buyToken = tokenB;
-        require((sellToken == _sellToken && buyToken == _buyToken) || (sellToken == _buyToken && buyToken == _sellToken), "Unsupported tokens pair");
+        if (!(sellToken == _sellToken && buyToken == _buyToken) && !(sellToken == _buyToken && buyToken == _sellToken)) return "Unsupported tokens pair";
+    }
+
+    function _checkOrderParams(GPv2Order.Data calldata orderData) internal view returns (string memory resut) {
+        if (orderData.validTo <= block.timestamp) return "validTo in the past";
+        if (orderData.receiver != BENEFICIARY) return "Wrong receiver";
+        if (orderData.partiallyFillable == true) return "Partially fill not allowed";
+        if (orderData.kind != GPv2Order.KIND_SELL) return "Wrong order kind";
+
+        //Check the TokenBalance marker value for using direct ERC20 balances for computing the order struct hash.
+        if (orderData.sellTokenBalance != GPv2Order.BALANCE_ERC20) return "Wrong order sellTokenBalance marker";
+        if (orderData.buyTokenBalance != GPv2Order.BALANCE_ERC20) return "Wrong order buyTokenBalance marker";
     }
 
     function _getPriceAndMaxMargin(address sellToken, address buyToken) internal view returns (uint256 price, uint16 maxMargin) {

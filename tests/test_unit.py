@@ -1,6 +1,6 @@
 import pytest
 from brownie import chain, reverts, Wei, OTCSeller
-from scripts.deploy import check_deployed
+from scripts.deploy import check_deployed_registry, check_deployed_seller, make_order
 
 from utils.config import lido_dao_agent_address, cowswap_vault_relayer, PRE_SIGNED
 from otc_seller_config import MAX_MARGIN
@@ -77,7 +77,8 @@ def signed_order(accounts, seller, beneficiary, sell_amount, make_order_sell_wet
 def test_deploy_params(registry, seller, beneficiary, deployRegistryConstructorArgs, createSellerInitializeArgs):
     regArgs = deployRegistryConstructorArgs(receiver=beneficiary)
     args = createSellerInitializeArgs(max_margin=MAX_MARGIN)
-    check_deployed(registry=registry, seller=seller, registryConstructorArgs=regArgs, sellerInitializeArgs=args)
+    check_deployed_registry(registry=registry, registryConstructorArgs=regArgs)
+    check_deployed_seller(registry=registry, seller=seller, sellerInitializeArgs=args)
 
 
 def test_initialize(accounts, registry, seller):
@@ -111,6 +112,118 @@ def test_get_chainlink_price_and_max_margin(seller):
     print(chainlink_price, chainlink_reverse_price)
     assert chainlink_price > 0
     assert max_margin == MAX_MARGIN
+
+
+def test_check_wrong_order(registry, seller, sell_amount, beneficiary, weth_token, dai_token, app_data):
+
+    dummyAddress = "0x0000000000000000000000000000000000000001"
+
+    valid_to = chain.time() + 3600
+    fee_amount = sell_amount * 0.05  # 5%
+    # simulate good exchange rate
+    (chainlink_price, _) = seller.priceAndMaxMargin()
+    if seller.tokenA() == weth_token:
+        buy_amount = chainlink_price * (sell_amount - fee_amount) / 10**18
+    else:
+        buy_amount = (sell_amount - fee_amount) * 10**18 / chainlink_price
+
+    # wrong sell_token
+    order = make_order(
+        sell_token=dummyAddress,  # weth_token,
+        buy_token=dai_token,
+        receiver=beneficiary,
+        sell_amount=sell_amount,
+        buy_amount=buy_amount,
+        valid_to=valid_to,
+        app_data=app_data,
+        fee_amount=fee_amount,
+        partiallyFillable=False,
+    )
+    orderUid = seller.getOrderUid(order)
+    (checked, result) = seller.checkOrder(order, orderUid)
+    assert checked == False and result == "Unsupported tokens pair", result
+
+    # wrong buy_token
+    order = make_order(
+        sell_token=weth_token,
+        buy_token=dummyAddress,
+        receiver=beneficiary,
+        sell_amount=sell_amount,
+        buy_amount=buy_amount,
+        valid_to=valid_to,
+        app_data=app_data,
+        fee_amount=fee_amount,
+        partiallyFillable=False,
+    )
+    orderUid = seller.getOrderUid(order)
+    (checked, result) = seller.checkOrder(order, orderUid)
+    assert checked == False and result == "Unsupported tokens pair", result
+
+    # wrong receiver
+    order = make_order(
+        sell_token=weth_token,
+        buy_token=dai_token,
+        receiver=dummyAddress,
+        sell_amount=sell_amount,
+        buy_amount=buy_amount,
+        valid_to=valid_to,
+        app_data=app_data,
+        fee_amount=fee_amount,
+        partiallyFillable=False,
+    )
+    orderUid = seller.getOrderUid(order)
+    (checked, result) = seller.checkOrder(order, orderUid)
+    assert checked == False and result == "Wrong receiver", result
+
+    # wrong validTo
+    order = make_order(
+        sell_token=weth_token,
+        buy_token=dai_token,
+        receiver=beneficiary,
+        sell_amount=sell_amount,
+        buy_amount=buy_amount,
+        valid_to=0,
+        app_data=app_data,
+        fee_amount=fee_amount,
+        partiallyFillable=False,
+    )
+    orderUid = seller.getOrderUid(order)
+    (checked, result) = seller.checkOrder(order, orderUid)
+    assert checked == False and result == "validTo in the past", result
+
+    # wrong orderUid (reuse previous orderUid with new order data)
+    order = make_order(
+        sell_token=weth_token,
+        buy_token=dai_token,
+        receiver=beneficiary,
+        sell_amount=sell_amount,
+        buy_amount=buy_amount,
+        valid_to=valid_to,
+        app_data=app_data,
+        fee_amount=sell_amount * 0.15,  # 15%,
+        partiallyFillable=False,
+    )
+    (checked, result) = seller.checkOrder(order, orderUid)
+    assert checked == False and result == "orderUid mismatch", result
+    orderUid = seller.getOrderUid(order)
+    (checked, result) = seller.checkOrder(order, orderUid)
+    assert checked == False and result == "Order fee to high", result
+
+    # wrong buyAmount
+    order = make_order(
+        sell_token=weth_token,
+        buy_token=dai_token,
+        receiver=beneficiary,
+        sell_amount=sell_amount,
+        buy_amount=buy_amount * 0.9,  # simulate chainlink higher price
+        valid_to=valid_to,
+        app_data=app_data,
+        fee_amount=fee_amount,
+        partiallyFillable=False,
+    )
+    orderUid = seller.getOrderUid(order)
+    (checked, result) = seller.checkOrder(order, orderUid)
+    assert checked == False and result == "buyAmount too low", result
 
 
 def test_sign_order(seller, sell_amount, signed_order, weth_token, dai_token, cow_settlement):

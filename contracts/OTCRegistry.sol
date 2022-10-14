@@ -92,7 +92,7 @@ contract OTCRegistry is Ownable, IOTCRegistry {
         _setPairConfig(tokenA, tokenB, priceFeed, maxMargin, constantPrice);
 
         require(seller == Clones.cloneDeterministic(implementation, salt), "Wrong clone address");
-        OTCSeller(payable(seller)).initialize(token0, token1);
+        OTCSeller(payable(seller)).initialize(tokenA, tokenB);
         emit SellerCreated(token0, token1, seller);
     }
 

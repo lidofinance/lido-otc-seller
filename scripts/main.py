@@ -6,9 +6,16 @@ from utils.deployed_state import read_or_update_state
 from utils.env import get_env
 from utils.helpers import formatUnit, parseUnit
 import utils.log as log
-from scripts.deploy import check_deployed, deploy_registry, deploy_seller, get_token_data, make_initialize_args, make_order, make_registry_constructor_args
+from scripts.deploy import (
+    deploy_registry,
+    deploy_seller,
+    get_token_data,
+    make_initialize_args,
+    make_order,
+    make_registry_constructor_args,
+)
 from utils.config import weth_token_address, lido_dao_agent_address
-from otc_seller_config import SELL_TOKEN, BUY_TOKEN, PRICE_FEED, BENEFICIARY, MAX_MARGIN, CONST_PRICE
+from otc_seller_config import BENEFICIARY, MAX_MARGIN, CONST_PRICE
 
 # environment
 WEB3_INFURA_PROJECT_ID = get_env("WEB3_INFURA_PROJECT_ID")
@@ -67,8 +74,8 @@ def showTokensPrice(sellTokenAddress, buyTokenAddress, priceFeedAddress):
     log.note(f"Price for 1{buyTokenSymbol}", f"{formatUnit(reverseAmount, sellTokenDecimals)}{sellTokenSymbol}")
 
 
-def main():
-    log.info("-= OTCRegistry and 1st OTCSeller deploy =-")
+def deployRegistry(beneficiaryAddress=BENEFICIARY):
+    log.info("-= OTCRegistry deploy =-")
 
     checkEnv()
     deployer = loadAccount("DEPLOYER")
@@ -76,34 +83,27 @@ def main():
     log.note("NETWORK", network.show_active())
     log.note("DEPLOYER", deployer.address)
 
-    regArgs = make_registry_constructor_args(weth_token=weth_token_address, dao_vault=lido_dao_agent_address, receiver=BENEFICIARY)
+    regArgs = make_registry_constructor_args(weth_token=weth_token_address, dao_vault=lido_dao_agent_address, receiver=beneficiaryAddress)
 
     log.info("> registryConstructorArgs:")
     for k, v in regArgs.items():
         log.note(k, v)
 
-    args = make_initialize_args(sell_toke=SELL_TOKEN, buy_token=BUY_TOKEN, price_feed=PRICE_FEED, max_margin=MAX_MARGIN, const_price=CONST_PRICE or 0)
+    # args = make_initialize_args(sell_toke=SELL_TOKEN, buy_token=BUY_TOKEN, price_feed=PRICE_FEED, max_margin=MAX_MARGIN, const_price=CONST_PRICE or 0)
 
-    [_, sellTokenSymbol, _] = get_token_data(SELL_TOKEN)
-    [_, buyTokenSymbol, _] = get_token_data(BUY_TOKEN)
-    log.info("Ready to deploy OTCSeller", f"{sellTokenSymbol}:{buyTokenSymbol}")
-    log.info("> sellerInitializeArgs:")
-    for k, v in args.items():
-        log.note(k, v)
+    # [_, sellTokenSymbol, _] = get_token_data(SELL_TOKEN)
+    # [_, buyTokenSymbol, _] = get_token_data(BUY_TOKEN)
+    # log.info("Ready to deploy OTCSeller", f"{sellTokenSymbol}:{buyTokenSymbol}")
+    # log.info("> sellerInitializeArgs:")
+    # for k, v in args.items():
+    #     log.note(k, v)
 
-    showTokensPrice(SELL_TOKEN, BUY_TOKEN, PRICE_FEED)
+    # showTokensPrice(SELL_TOKEN, BUY_TOKEN, PRICE_FEED)
 
     proceedPrompt()
 
     log.note(f"OTCRegistry deploy")
     registry = deploy_registry({"from": deployer}, regArgs)
-
-    log.note(f"OTCSeller deploy")
-    seller = deploy_seller({"from": deployer}, args)
-
-    log.info("Checking deployed OTCSeller...")
-    check_deployed(registry=registry, seller=seller, registryConstructorArgs=regArgs, sellerInitializeArgs=args)
-    log.okay("OTCSeller check pass")
 
     if network.show_active() == "mainnet":
         proceed = log.prompt_yes_no("(Re)Try to publish source codes?")
@@ -126,7 +126,7 @@ def deploySeller(sellTokenAddress, buyTokenAddress, priceFeedAddress, maxMargin=
     log.note("NETWORK", network.show_active())
     log.note("DEPLOYER", deployer.address)
     args = make_initialize_args(
-        sell_toke=sellTokenAddress, buy_token=buyTokenAddress, price_feed=priceFeedAddress, max_margin=maxMargin, const_price=constPrice
+        sell_token=sellTokenAddress, buy_token=buyTokenAddress, price_feed=priceFeedAddress, max_margin=maxMargin, const_price=constPrice
     )
     [_, sellTokenSymbol, _] = get_token_data(sellTokenAddress)
     [_, buyTokenSymbol, _] = get_token_data(buyTokenAddress)
@@ -141,6 +141,8 @@ def deploySeller(sellTokenAddress, buyTokenAddress, priceFeedAddress, maxMargin=
 
     log.note(f"OTCSeller deploy")
     seller = deploy_seller({"from": deployer}, args)
+
+    log.note("All deployed metadata saved to", f"./deployed-{network.show_active()}.json")
 
 
 def signOrder(sellTokenAddress, buyTokenAddress, sellAmount, validPeriod=3600):

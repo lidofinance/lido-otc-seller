@@ -75,7 +75,8 @@ def test_create_and_check_order(seller, sell_amount, app_data, make_order_sell_w
         sell_amount=sell_amount, buy_amount=buy_amount, fee_amount=fee_amount, receiver=lido_dao_agent_address, valid_to=valid_to
     )
     assert orderUid == seller.getOrderUid(order)
-    assert seller.checkOrder(order, orderUid) == True
+    (checked, result) = seller.checkOrder(order, orderUid)
+    assert checked == True, result
 
 
 def test_sign_order(

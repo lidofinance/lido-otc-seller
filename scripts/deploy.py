@@ -69,10 +69,10 @@ def propose_transfer_eth_for_sell(
     )
 
 
-def make_initialize_args(sell_toke, buy_token, price_feed, max_margin, const_price):
+def make_initialize_args(sell_token, buy_token, price_feed, max_margin, const_price):
     return DotMap(
         {
-            "sellTokenAddress": sell_toke,
+            "sellTokenAddress": sell_token,
             "buyTokenAddress": buy_token,
             "chainLinkPriceFeedAddress": price_feed,
             # "beneficiaryAddress": receiver,
@@ -119,6 +119,10 @@ def deploy_registry(tx_params, sellerInitializeArgs):
             }
         )
         log.okay("OTCRegistry deployed at", registry.address)
+
+        log.info("Checking deployed OTCRegistry...")
+        check_deployed_registry(registry=registry, registryConstructorArgs=args)
+        log.okay("OTCRegistry check pass")
 
     return registry
 
@@ -185,6 +189,10 @@ def deploy_seller(tx_params, sellerInitializeArgs, registryAddress=None):
 
     seller = OTCSeller.at(sellerAddress)
 
+    log.info("Checking deployed OTCSeller...")
+    check_deployed_seller(registry=registry, seller=seller, sellerInitializeArgs=args)
+    log.okay("OTCSeller check pass")
+
     log.info("Updating seller deployed info...")
     [priceFeed, maxMargin, _, constantPrice] = registry.getPairConfig(args.sellTokenAddress, args.buyTokenAddress)
     sellerInfo.pairConfig = {
@@ -213,20 +221,25 @@ def deploy_seller(tx_params, sellerInitializeArgs, registryAddress=None):
 #     return (registry, seller)
 
 
-def check_deployed(registry, seller, registryConstructorArgs, sellerInitializeArgs):
+def check_deployed_registry(registry, registryConstructorArgs):
+    impl = OTCSeller.at(registry.implementation())
+    assert impl.DAO_VAULT() == registryConstructorArgs.daoVaultAddress, "Wrong Lido Agent address"
+    assert impl.WETH() == registryConstructorArgs.wethAddress, "Wrong WETH address"
+    assert impl.BENEFICIARY() == registryConstructorArgs.beneficiaryAddress, "Wrong beneficiary address"
+
+
+def check_deployed_seller(registry, seller, sellerInitializeArgs):
     assert registry.isSellerExists(seller.address) == True, "Incorrect seller deploy"
     assert registry.getSellerFor(sellerInitializeArgs.sellTokenAddress, sellerInitializeArgs.buyTokenAddress) == seller.address, "Incorrect seller deploy"
     assert registry.getSellerFor(sellerInitializeArgs.buyTokenAddress, sellerInitializeArgs.sellTokenAddress) == seller.address, "Incorrect seller deploy"
 
     impl = OTCSeller.at(registry.implementation())
-    assert impl.DAO_VAULT() == registryConstructorArgs.daoVaultAddress, "Wrong Lido Agent address"
-    assert impl.WETH() == registryConstructorArgs.wethAddress, "Wrong WETH address"
 
-    assert seller.DAO_VAULT() == registryConstructorArgs.daoVaultAddress, "Wrong Lido Agent address"
-    assert seller.WETH() == registryConstructorArgs.wethAddress, "Wrong WETH address"
+    assert seller.DAO_VAULT() == impl.DAO_VAULT(), "Wrong Lido Agent address on seller"
+    assert seller.WETH() == impl.WETH(), "Wrong WETH address on seller"
+    assert seller.BENEFICIARY() == impl.BENEFICIARY(), "Wrong beneficiary address on seller"
     assert seller.tokenA() == sellerInitializeArgs.sellTokenAddress, "Wrong sellToken address"
     assert seller.tokenB() == sellerInitializeArgs.buyTokenAddress, "Wrong buyToken address"
-    assert seller.BENEFICIARY() == registryConstructorArgs.beneficiaryAddress, "Wrong beneficiary address"
 
     (priceFeed, maxMargin, reverse, constPrice) = registry.getPairConfig(sellerInitializeArgs.sellTokenAddress, sellerInitializeArgs.buyTokenAddress)
 
