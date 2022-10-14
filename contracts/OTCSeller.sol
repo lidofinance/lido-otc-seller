@@ -149,6 +149,9 @@ contract OTCSeller is Initializable, AssetRecoverer {
         (bool checked, string memory result) = checkOrder(orderData, orderUid);
         require(checked, result);
 
+        // check balance
+        require(orderData.sellToken.balanceOf(address(this)) >= orderData.sellAmount, "Insufficient sell token balance");
+
         orderData.sellToken.safeIncreaseAllowance(GP_V2_VAULT_RELAYER, orderData.sellAmount);
         // setPresignature to order will happen
         IGPv2Settlement(GP_V2_SETTLEMENT).setPreSignature(orderUid, true);
