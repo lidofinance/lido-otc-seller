@@ -189,7 +189,8 @@ contract OTCSeller is Initializable, AssetRecoverer {
         uint256 tokenId,
         bytes calldata data
     ) external {
-        if (token == tokenA || token == tokenB) _transferERC721(token, BENEFICIARY, tokenId, data);
+        require(token != tokenA && token != tokenB, "Wrong token address");
+        _transferERC721(token, BENEFICIARY, tokenId, data);
     }
 
     /// @notice Can be called by anyone
@@ -199,6 +200,7 @@ contract OTCSeller is Initializable, AssetRecoverer {
         uint256 amount,
         bytes calldata data
     ) external {
+        require(token != tokenA && token != tokenB, "Wrong token address");
         _transferERC1155(token, BENEFICIARY, tokenId, amount, data);
     }
 

@@ -37,6 +37,14 @@ contract OTCRegistry is Ownable, IOTCRegistry {
         implementation = address(new OTCSeller(wethAddress, daoVaultAddress, beneficiaryAddress));
     }
 
+    /**
+     * @notice forbids owner from renouncing ownership and locking assets forever
+     * @dev overrides Ownable's `renounceOwnership` to always revert
+     */
+    function renounceOwnership() public pure override {
+        revert("DISABLED");
+    }
+
     function isSellerExists(address seller) external view returns (bool) {
         return _sellers.contains(seller);
     }
