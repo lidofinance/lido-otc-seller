@@ -4,16 +4,14 @@ The OTC Seller is used to exchange one asset from the [DAO Treasury](https://mai
 
 ## Description
 
-The contract is non-upgradable, and its params supposed to be set upon the construction stage:
+The `OTCRegistry` and  `OTCSeller` contracts are non-upgradable, and its params supposed to be set upon the construction stage:
 
 - ERC-20 trading pair (or native ether)
 - Owner (beneficiary)
 - ChainLink price feed
 - Spot price margin
 
-Thus, every deployed instance is devoted to represent the single trading scenario flow (e.g. selling LDO to DAI on behalf of Lido DAO Treasury).
-
-The contract allows to have several exchange orders at the same time.
+The OTCRegistry facilitates the deployments of OTCSeller instances covering different trading scenarios.
 
 > *NB:* Due to the CowSwap exchange logic, it is necessary to place an order via CowSwap API with an additional toolkit before before or at the moment of order settle.
 
@@ -33,7 +31,7 @@ The default deployment parameters are set in [`otc_seller_config.py`]. The follo
 
 - `BENEFICIARY` Beneficiary address. This address will be recipient of all filled exchange orders. Also it has rights to cancel non filled yet orders.
 - `MAX_MARGIN` max allowed spot price margin from ChainLink price feed on order settle moment.
-- `CONST_PRICE` constant token conversion price. It can be set when no price feed for pair exists, so in this case PRICE_FEED should be set in zero address. Otherwise CONST_PRICE should be set in zero.
+- `CONST_PRICE` constant token conversion price. It can be set when no price feed for pair exists, so in this case PRICE_FEED should be set to zero address. Otherwise CONST_PRICE should be set to zero.
 
 Example content of `otc_seller_config.py`:
 
@@ -62,7 +60,7 @@ brownie test -s --disable-warnings
 
 ## Deployment
 
-Get sure your account is imported to Brownie: `brownie accounts list`.
+Make sure your account is imported to Brownie: `brownie accounts list`.
 
 Make sure you have exported or set id directly:
 
@@ -101,20 +99,20 @@ where:
 - `<priceFeedAddress>` ChainLink price feed address for tokens pair above.
 - `<maxMargin>` and  `<constantPrice>` are optional, their value will be taken from the configuration file by default (see [Configuration](#configuration) section).
 
-> *NB:* `<sellTokenAddress>` and `<buyTokenAddress>` mast be set in order according ChainLink price feed, i.e. in the case of selling ETH for DAI, the sellToken must be set to DAI, as the ChainLink price feed returns the ETH amount for 1 DAI.
+> *NB:* `<sellTokenAddress>` and `<buyTokenAddress>` must be set in order according ChainLink price feed, i.e. in the case of selling ETH for DAI, the sellToken must be set to DAI, as the ChainLink price feed returns the ETH amount for 1 DAI.
 
 Example for ETH-for-DAI seller:
 
 ```shell
-# SELL_TOKEN and BUY_TOKEN mast be set in order according ChainLink price feed
+# SELL_TOKEN and BUY_TOKEN must be set to order according ChainLink price feed
 # i.e., in the case of selling ETH for DAI, the sellToken must be set to DAI,
 # as the ChainLink price feed returns the ETH amount for 1 DAI
 # DAI
-SELL_TOKEN = "0x6B175474E89094C44Da98b954EedeAC495271d0F"
+export SELL_TOKEN = "0x6B175474E89094C44Da98b954EedeAC495271d0F"
 # WETH
-BUY_TOKEN = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+export BUY_TOKEN = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
 # ChainLink price feed DAI-ETH
-PRICE_FEED = "0x773616E4d11A78F511299002da57A0a94577F1f4"
+export PRICE_FEED = "0x773616E4d11A78F511299002da57A0a94577F1f4"
 
 DEPLOYER=deployer brownie run --network mainnet main deploySeller $SELL_TOKEN $BUY_TOKEN $PRICE_FEED
 ```
@@ -138,5 +136,5 @@ where:
 - `EXECUTOR` - transaction executor Brownie account alias
 - `sellTokenAddress` token address to exchange.
 - `buyTokenAddress` secondary token address to exchange for.
-- `sellAmount` - desired amount of *sell token* to sell, should be less or equal the seller contract balance. Amount must be set in *human readable* format, not the in Weis, i.e. `10.5 ETH` is written as `10.5`, script will transform amount automatically according the token decimals.
+- `sellAmount` - desired amount of *sell token* to sell, should be less or equal the seller contract balance. Amount must be set to *human readable* format, not the in Weis, i.e. `10.5 ETH` is written as `10.5`, script will transform amount automatically according the token decimals.
 - `validPeriod` - duration in seconds from the current moment during which the order will be valid and available for execution on CowSwap. By default = 3600 (1hour).
