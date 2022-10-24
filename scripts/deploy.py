@@ -69,27 +69,21 @@ def propose_transfer_eth_for_sell(
     )
 
 
-def make_initialize_args(sell_token, buy_token, price_feed, max_margin, const_price):
+def make_initialize_args(receiver, sell_token, buy_token, price_feed, max_margin, const_price):
     return DotMap(
         {
+            "beneficiaryAddress": receiver,
             "sellTokenAddress": sell_token,
             "buyTokenAddress": buy_token,
             "chainLinkPriceFeedAddress": price_feed,
-            # "beneficiaryAddress": receiver,
             "maxMargin": max_margin,
             "constantPrice": const_price,
         }
     )
 
 
-def make_registry_constructor_args(weth_token, dao_vault, receiver):
-    return DotMap(
-        {
-            "wethAddress": weth_token,
-            "daoVaultAddress": dao_vault,
-            "beneficiaryAddress": receiver,
-        }
-    )
+def make_registry_constructor_args(weth_token, dao_vault):
+    return DotMap({"wethAddress": weth_token, "daoVaultAddress": dao_vault})
 
 
 def deploy_registry(tx_params, sellerInitializeArgs):
@@ -104,7 +98,6 @@ def deploy_registry(tx_params, sellerInitializeArgs):
         registry = OTCRegistry.deploy(
             args.wethAddress,
             args.daoVaultAddress,
-            args.beneficiaryAddress,
             tx_params,
         )
         log.info("> txHash:", registry.tx.txid)
@@ -157,7 +150,7 @@ def deploy_seller(tx_params, sellerInitializeArgs, registryAddress=None):
         exit()
 
     args = DotMap(sellerInitializeArgs)
-    sellerAddress = registry.getSellerFor(args.sellTokenAddress, args.buyTokenAddress)
+    sellerAddress = registry.getSellerFor(args.beneficiaryAddress, args.sellTokenAddress, args.buyTokenAddress)
     sellers = deployedState.sellers or []
     sellerIndex = find_deployed_seller_index(sellers, sellerAddress)
     if sellerIndex == -1:
@@ -175,6 +168,7 @@ def deploy_seller(tx_params, sellerInitializeArgs, registryAddress=None):
         log.info("Deploying OTCSeller for tokens pair", f"{sellTokenASymbol}:{buyTokenBSymbol}")
 
         tx = registry.createSeller(
+            args.beneficiaryAddress,
             args.sellTokenAddress,
             args.buyTokenAddress,
             args.chainLinkPriceFeedAddress,
@@ -225,19 +219,24 @@ def check_deployed_registry(registry, registryConstructorArgs):
     impl = OTCSeller.at(registry.implementation())
     assert impl.DAO_VAULT() == registryConstructorArgs.daoVaultAddress, "Wrong Lido Agent address"
     assert impl.WETH() == registryConstructorArgs.wethAddress, "Wrong WETH address"
-    assert impl.BENEFICIARY() == registryConstructorArgs.beneficiaryAddress, "Wrong beneficiary address"
 
 
 def check_deployed_seller(registry, seller, sellerInitializeArgs):
     assert registry.isSellerExists(seller.address) == True, "Incorrect seller deploy"
-    assert registry.getSellerFor(sellerInitializeArgs.sellTokenAddress, sellerInitializeArgs.buyTokenAddress) == seller.address, "Incorrect seller deploy"
-    assert registry.getSellerFor(sellerInitializeArgs.buyTokenAddress, sellerInitializeArgs.sellTokenAddress) == seller.address, "Incorrect seller deploy"
+    assert (
+        registry.getSellerFor(sellerInitializeArgs.beneficiaryAddress, sellerInitializeArgs.sellTokenAddress, sellerInitializeArgs.buyTokenAddress)
+        == seller.address
+    ), "Incorrect seller deploy"
+    assert (
+        registry.getSellerFor(sellerInitializeArgs.beneficiaryAddress, sellerInitializeArgs.buyTokenAddress, sellerInitializeArgs.sellTokenAddress)
+        == seller.address
+    ), "Incorrect seller deploy"
 
     impl = OTCSeller.at(registry.implementation())
 
     assert seller.DAO_VAULT() == impl.DAO_VAULT(), "Wrong Lido Agent address on seller"
     assert seller.WETH() == impl.WETH(), "Wrong WETH address on seller"
-    assert seller.BENEFICIARY() == impl.BENEFICIARY(), "Wrong beneficiary address on seller"
+    assert seller.beneficiary() == sellerInitializeArgs.beneficiaryAddress, "beneficiary address on seller"
     assert seller.tokenA() == sellerInitializeArgs.sellTokenAddress, "Wrong sellToken address"
     assert seller.tokenB() == sellerInitializeArgs.buyTokenAddress, "Wrong buyToken address"
 

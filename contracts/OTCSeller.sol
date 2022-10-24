@@ -35,21 +35,17 @@ contract OTCSeller is Initializable, AssetRecoverer {
     address public immutable WETH;
     /// Lido Agent (Vault) address
     address public immutable DAO_VAULT;
-    address public immutable BENEFICIARY;
+
     address public immutable registry;
 
+    address public beneficiary;
     address public tokenA;
     address public tokenB;
 
-    constructor(
-        address wethAddress,
-        address daoVaultAddress,
-        address beneficiaryAddress
-    ) {
-        require(wethAddress != address(0) && daoVaultAddress != address(0) && beneficiaryAddress != address(0), "Zero address");
+    constructor(address wethAddress, address daoVaultAddress) {
+        require(wethAddress != address(0) && daoVaultAddress != address(0), "Zero address");
         WETH = wethAddress;
         DAO_VAULT = daoVaultAddress;
-        BENEFICIARY = beneficiaryAddress;
         registry = msg.sender;
     }
 
@@ -61,11 +57,16 @@ contract OTCSeller is Initializable, AssetRecoverer {
     /// @notice sellToken and buyToken mast be set in order according chainlink price feed
     ///         i.e., in the case of selling ETH for DAI, the sellToken must be set to DAI,
     ///         as the chainlink price feed returns the ETH amount for 1DAI
-    function initialize(address _tokenA, address _tokenB) external initializer onlyRegistry {
+    function initialize(
+        address _beneficiary,
+        address _tokenA,
+        address _tokenB
+    ) external initializer onlyRegistry {
         /// @notice contract works only with ERC20 compatible tokens
-        require(_tokenA != address(0) && _tokenB != address(0), "Zero address");
+        require(_tokenA != address(0) && _tokenB != address(0) && _beneficiary != address(0), "Zero address");
         require(_tokenA != _tokenB, "tokenA and tokenB must be different");
 
+        beneficiary = _beneficiary;
         tokenA = _tokenA;
         tokenB = _tokenB;
     }
@@ -178,12 +179,12 @@ contract OTCSeller is Initializable, AssetRecoverer {
         if (token == tokenA || token == tokenB) {
             _checkBeneficiary();
         }
-        _transferERC20(token, BENEFICIARY, amount);
+        _transferERC20(token, beneficiary, amount);
     }
 
     /// @notice Can be called by anyone
     function transferEther(uint256 amount) external {
-        _transferEther(BENEFICIARY, amount);
+        _transferEther(beneficiary, amount);
     }
 
     /// @notice Can be called by anyone
@@ -193,7 +194,7 @@ contract OTCSeller is Initializable, AssetRecoverer {
         bytes calldata data
     ) external {
         require(token != tokenA && token != tokenB, "Wrong token address");
-        _transferERC721(token, BENEFICIARY, tokenId, data);
+        _transferERC721(token, beneficiary, tokenId, data);
     }
 
     /// @notice Can be called by anyone
@@ -204,7 +205,7 @@ contract OTCSeller is Initializable, AssetRecoverer {
         bytes calldata data
     ) external {
         require(token != tokenA && token != tokenB, "Wrong token address");
-        _transferERC1155(token, BENEFICIARY, tokenId, amount, data);
+        _transferERC1155(token, beneficiary, tokenId, amount, data);
     }
 
     function _transferERC20(
@@ -222,7 +223,7 @@ contract OTCSeller is Initializable, AssetRecoverer {
     }
 
     function _checkBeneficiary() internal view {
-        require(msg.sender == BENEFICIARY, "Only beneficiary has access");
+        require(msg.sender == beneficiary, "Only beneficiary has access");
     }
 
     function _checkTokensPair(address sellToken, address buyToken) internal view returns (string memory resut) {
@@ -233,7 +234,7 @@ contract OTCSeller is Initializable, AssetRecoverer {
 
     function _checkOrderParams(GPv2Order.Data calldata orderData) internal view returns (string memory resut) {
         if (orderData.validTo <= block.timestamp) return "validTo in the past";
-        if (orderData.receiver != BENEFICIARY) return "Wrong receiver";
+        if (orderData.receiver != beneficiary) return "Wrong receiver";
         if (orderData.partiallyFillable == true) return "Partially fill not allowed";
         if (orderData.kind != GPv2Order.KIND_SELL) return "Wrong order kind";
 

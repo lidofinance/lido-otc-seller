@@ -75,8 +75,8 @@ def signed_order(accounts, seller, beneficiary, sell_amount, make_order_sell_wet
 
 
 def test_deploy_params(registry, seller, beneficiary, deployRegistryConstructorArgs, createSellerInitializeArgs):
-    regArgs = deployRegistryConstructorArgs(receiver=beneficiary)
-    args = createSellerInitializeArgs(max_margin=MAX_MARGIN)
+    regArgs = deployRegistryConstructorArgs()
+    args = createSellerInitializeArgs(receiver=beneficiary, max_margin=MAX_MARGIN)
     check_deployed_registry(registry=registry, registryConstructorArgs=regArgs)
     check_deployed_seller(registry=registry, seller=seller, sellerInitializeArgs=args)
 
@@ -86,23 +86,35 @@ def test_initialize(accounts, registry, seller):
     impl = OTCSeller.at(registry.implementation())
     # try initialize impl
     with reverts("Only registry can call"):
-        impl.initialize(dummyAddress, dummyAddress, {"from": accounts[0]})
+        impl.initialize(dummyAddress, dummyAddress, dummyAddress, {"from": accounts[0]})
     # retry initialize
     with reverts("Initializable: contract is already initialized"):
-        seller.initialize(dummyAddress, dummyAddress, {"from": accounts[0]})
+        seller.initialize(dummyAddress, dummyAddress, dummyAddress, {"from": accounts[0]})
 
 
-def test_retry_deploy_same_tokens(accounts, registry, createSellerInitializeArgs):
-    args = createSellerInitializeArgs(max_margin=MAX_MARGIN)
+def test_retry_deploy_same_tokens(accounts, registry, beneficiary, createSellerInitializeArgs):
+    args = createSellerInitializeArgs(receiver=beneficiary, max_margin=MAX_MARGIN)
     with reverts("Seller exists"):
         registry.createSeller(
-            args.sellTokenAddress, args.buyTokenAddress, args.chainLinkPriceFeedAddress, args.maxMargin, args.constantPrice, {"from": accounts[0]}
+            args.beneficiaryAddress,
+            args.sellTokenAddress,
+            args.buyTokenAddress,
+            args.chainLinkPriceFeedAddress,
+            args.maxMargin,
+            args.constantPrice,
+            {"from": accounts[0]},
         )
 
     # swap tokens
     with reverts("Seller exists"):
         registry.createSeller(
-            args.buyTokenAddress, args.sellTokenAddress, args.chainLinkPriceFeedAddress, args.maxMargin, args.constantPrice, {"from": accounts[0]}
+            args.beneficiaryAddress,
+            args.buyTokenAddress,
+            args.sellTokenAddress,
+            args.chainLinkPriceFeedAddress,
+            args.maxMargin,
+            args.constantPrice,
+            {"from": accounts[0]},
         )
 
 

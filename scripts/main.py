@@ -74,7 +74,7 @@ def showTokensPrice(sellTokenAddress, buyTokenAddress, priceFeedAddress):
     log.note(f"Price for 1{buyTokenSymbol}", f"{formatUnit(reverseAmount, sellTokenDecimals)}{sellTokenSymbol}")
 
 
-def deployRegistry(beneficiaryAddress=BENEFICIARY):
+def deployRegistry():
     log.info("-= OTCRegistry deploy =-")
 
     checkEnv()
@@ -83,7 +83,7 @@ def deployRegistry(beneficiaryAddress=BENEFICIARY):
     log.note("NETWORK", network.show_active())
     log.note("DEPLOYER", deployer.address)
 
-    regArgs = make_registry_constructor_args(weth_token=weth_token_address, dao_vault=lido_dao_agent_address, receiver=beneficiaryAddress)
+    regArgs = make_registry_constructor_args(weth_token=weth_token_address, dao_vault=lido_dao_agent_address)
 
     log.info("> registryConstructorArgs:")
     for k, v in regArgs.items():
@@ -117,7 +117,7 @@ def deployRegistry(beneficiaryAddress=BENEFICIARY):
     log.note("All deployed metadata saved to", f"./deployed-{network.show_active()}.json")
 
 
-def deploySeller(sellTokenAddress, buyTokenAddress, priceFeedAddress, maxMargin=MAX_MARGIN, constPrice=CONST_PRICE or 0):
+def deploySeller(sellTokenAddress, buyTokenAddress, priceFeedAddress, beneficiaryAddress=BENEFICIARY, maxMargin=MAX_MARGIN, constPrice=CONST_PRICE or 0):
     log.info("-= OTCSeller deploy =-")
 
     checkEnv()
@@ -126,7 +126,12 @@ def deploySeller(sellTokenAddress, buyTokenAddress, priceFeedAddress, maxMargin=
     log.note("NETWORK", network.show_active())
     log.note("DEPLOYER", deployer.address)
     args = make_initialize_args(
-        sell_token=sellTokenAddress, buy_token=buyTokenAddress, price_feed=priceFeedAddress, max_margin=maxMargin, const_price=constPrice
+        receiver=beneficiaryAddress,
+        sell_token=sellTokenAddress,
+        buy_token=buyTokenAddress,
+        price_feed=priceFeedAddress,
+        max_margin=maxMargin,
+        const_price=constPrice,
     )
     [_, sellTokenSymbol, _] = get_token_data(sellTokenAddress)
     [_, buyTokenSymbol, _] = get_token_data(buyTokenAddress)
@@ -145,7 +150,7 @@ def deploySeller(sellTokenAddress, buyTokenAddress, priceFeedAddress, maxMargin=
     log.note("All deployed metadata saved to", f"./deployed-{network.show_active()}.json")
 
 
-def signOrder(sellTokenAddress, buyTokenAddress, sellAmount, validPeriod=3600):
+def signOrder(sellTokenAddress, buyTokenAddress, sellAmount, validPeriod=3600, beneficiaryAddress=BENEFICIARY):
     log.info("-= Create and sign order =-")
 
     txExecutor = loadAccount("EXECUTOR")
@@ -157,7 +162,7 @@ def signOrder(sellTokenAddress, buyTokenAddress, sellAmount, validPeriod=3600):
     registry = OTCRegistry.at(deployedState.registryAddress)
     log.info(f"Using registry at", registry.address)
 
-    sellerAddress = registry.getSellerFor(sellTokenAddress, buyTokenAddress)
+    sellerAddress = registry.getSellerFor(beneficiaryAddress, sellTokenAddress, buyTokenAddress)
     if not registry.isSellerExists(sellerAddress):
         log.error(f"Seller for pair {sellTokenAddress}:{buyTokenAddress} is not defined/deployed")
         exit()
@@ -177,7 +182,7 @@ def signOrder(sellTokenAddress, buyTokenAddress, sellAmount, validPeriod=3600):
         exit()
 
     seller = OTCSeller.at(sellerAddress)
-    receiver = seller.BENEFICIARY()
+    receiver = seller.beneficiary()
     log.info(f"Getting fee amount...")
     feeAmount, buyAmount = api_get_sell_fee(sellTokenAddress, buyTokenAddress, sellAmount, "mainnet")
     validTo = chain.time() + validPeriod

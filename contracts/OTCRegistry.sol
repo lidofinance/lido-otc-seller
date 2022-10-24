@@ -13,7 +13,7 @@ import {IChainlinkPriceFeedV3} from "./interfaces/IChainlinkPriceFeedV3.sol";
 contract OTCRegistry is Ownable, IOTCRegistry {
     using EnumerableSet for EnumerableSet.AddressSet;
 
-    event SellerCreated(address indexed token0, address indexed token1, address pair);
+    event SellerCreated(address indexed token0, address indexed token1, address indexed beneficiary, address pair);
     event PairConfigSet(address indexed token0, address indexed token1, PairConfig config);
 
     address public immutable implementation;
@@ -31,10 +31,9 @@ contract OTCRegistry is Ownable, IOTCRegistry {
 
     constructor(
         address wethAddress,
-        address daoVaultAddress,
-        address beneficiaryAddress
+        address daoVaultAddress // address beneficiaryAddress
     ) {
-        implementation = address(new OTCSeller(wethAddress, daoVaultAddress, beneficiaryAddress));
+        implementation = address(new OTCSeller(wethAddress, daoVaultAddress));
     }
 
     /**
@@ -77,15 +76,20 @@ contract OTCRegistry is Ownable, IOTCRegistry {
     }
 
     /// @dev calculates the Clone address for a pair
-    function getSellerFor(address tokenA, address tokenB) external view returns (address seller) {
+    function getSellerFor(
+        address beneficiary,
+        address tokenA,
+        address tokenB
+    ) external view returns (address seller) {
         (address token0, address token1) = _sortTokens(tokenA, tokenB);
-        bytes32 salt = keccak256(abi.encodePacked(token0, token1));
+        bytes32 salt = keccak256(abi.encodePacked(beneficiary, token0, token1));
         seller = Clones.predictDeterministicAddress(implementation, salt, address(this));
         // require(_sellers.contains(seller), "seller not exists");
     }
 
     /// @dev create the Clone for implementation and initialize it
     function createSeller(
+        address beneficiary,
         address tokenA,
         address tokenB,
         address priceFeed,
@@ -93,15 +97,15 @@ contract OTCRegistry is Ownable, IOTCRegistry {
         uint256 constantPrice
     ) external onlyOwner returns (address seller) {
         (address token0, address token1) = _sortTokens(tokenA, tokenB);
-        bytes32 salt = keccak256(abi.encodePacked(token0, token1));
+        bytes32 salt = keccak256(abi.encodePacked(beneficiary, token0, token1));
         seller = Clones.predictDeterministicAddress(implementation, salt, address(this));
         require(_sellers.add(seller), "Seller exists"); // add seller addres to list
 
         _setPairConfig(tokenA, tokenB, priceFeed, maxMargin, constantPrice);
 
         require(seller == Clones.cloneDeterministic(implementation, salt), "Wrong clone address");
-        OTCSeller(payable(seller)).initialize(tokenA, tokenB);
-        emit SellerCreated(token0, token1, seller);
+        OTCSeller(payable(seller)).initialize(beneficiary, tokenA, tokenB);
+        emit SellerCreated(token0, token1, beneficiary, seller);
     }
 
     function getPriceAndMaxMargin(address tokenA, address tokenB) external view returns (uint256 price, uint16 maxMargin) {

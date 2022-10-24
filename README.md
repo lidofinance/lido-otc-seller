@@ -71,12 +71,8 @@ DEPLOYER=deployer # deployer account alias
 To deploy OTCRegistry run deploy script and follow the wizard:
 
 ```shell
-DEPLOYER=deployer brownie run --network mainnet main deployRegistry [<beneficiaryAddress = BENEFICIARY>]
+DEPLOYER=deployer brownie run --network mainnet main deployRegistry
 ```
-
-where:
-
-- `<beneficiaryAddress>` - address of beneficiary, is optional, its value will be taken from the configuration file by default (see [Configuration](#configuration) section).
 
 At the deploy moment `deployer` account becomes the `OTCRegistry` owner. The owner can be changed by calling the `transferOwnership` method (e.g., to transfer ownership to the DAO agent)
 
@@ -89,7 +85,7 @@ Deploy script is stateful, so it safe to start several times. To deploy from scr
 `OTCRegistry` allows to have multiple sellers for different token pairs. To deploy additional seller run the next command and follow the wizard:
 
 ```shell
-DEPLOYER=deployer brownie run --network mainnet main deploySeller <sellTokenAddress> <buyTokenAddress> <priceFeedAddress> [<maxMargin = MAX_MARGIN>] [<constantPrice = CONST_PRICE>]
+DEPLOYER=deployer brownie run --network mainnet main deploySeller <sellTokenAddress> <buyTokenAddress> <priceFeedAddress> [<beneficiaryAddress = BENEFICIARY>] [<maxMargin = MAX_MARGIN>] [<constantPrice = CONST_PRICE>]
 ```
 
 where:
@@ -97,11 +93,12 @@ where:
 - `<sellTokenAddress>` primary token address to exchange.
 - `<buyTokenAddress>` secondary token address to exchange for.
 - `<priceFeedAddress>` ChainLink price feed address for tokens pair above.
+- `<beneficiaryAddress>` - address of beneficiary, is optional, its value will be taken from the configuration file by default (see [Configuration](#configuration) section).
 - `<maxMargin>` and  `<constantPrice>` are optional, their value will be taken from the configuration file by default (see [Configuration](#configuration) section).
 
 > *NB:* `<sellTokenAddress>` and `<buyTokenAddress>` must be set in order according ChainLink price feed, i.e. in the case of selling ETH for DAI, the sellToken must be set to DAI, as the ChainLink price feed returns the ETH amount for 1 DAI.
 
-Example for ETH-for-DAI seller:
+Example for ETH-for-DAI seller and Lido Agent as beneficiary (see [Configuration](#configuration) section):
 
 ```shell
 # SELL_TOKEN and BUY_TOKEN must be set to order according ChainLink price feed
@@ -128,7 +125,7 @@ When `OTCSeller` for desired token pair is deployed and it balance is topped up 
 The following command automates the order creation process and allows  to control all the parameters to avoid mistakes.
 
 ```shell
-EXECUTOR=deployer brownie run --network mainnet main settleOrder <sellTokenAddress> <buyTokenAddress> <sellAmount> [<validPeriod> = 3600]
+EXECUTOR=deployer brownie run --network mainnet main signOrder <sellTokenAddress> <buyTokenAddress> <sellAmount> [<validPeriod> = 3600] [<beneficiaryAddress = BENEFICIARY>]
 ```
 
 where:
@@ -137,4 +134,5 @@ where:
 - `sellTokenAddress` token address to exchange.
 - `buyTokenAddress` secondary token address to exchange for.
 - `sellAmount` - desired amount of *sell token* to sell, should be less or equal the seller contract balance. Amount must be set to *human readable* format, not the in Weis, i.e. `10.5 ETH` is written as `10.5`, script will transform amount automatically according the token decimals.
-- `validPeriod` - duration in seconds from the current moment during which the order will be valid and available for execution on CowSwap. By default = 3600 (1hour).
+- `validPeriod` - (optional) duration in seconds from the current moment during which the order will be valid and available for execution on CowSwap. By default = 3600 (1hour).
+- `<beneficiaryAddress>` - (optional) address of beneficiary. The beneficiary address is used to obtain a valid seller address. Its value will be taken from the configuration file by default (see [Configuration](#configuration) section).

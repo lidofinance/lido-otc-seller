@@ -162,11 +162,10 @@ def beneficiary(accounts):
 
 @pytest.fixture(scope="module")
 def deployRegistryConstructorArgs():
-    def run(receiver):
+    def run():
         return make_registry_constructor_args(
             weth_token=weth_token_address,
             dao_vault=lido_dao_agent_address,
-            receiver=receiver,
         )
 
     return run
@@ -174,12 +173,12 @@ def deployRegistryConstructorArgs():
 
 @pytest.fixture(scope="module")
 def createSellerInitializeArgs():
-    def run(max_margin):
+    def run(receiver, max_margin):
         # NOTE: sellToken and buyToken mast be set in order according chainlink price feed
         # i.e., in the case of selling ETH for DAI, the sellToken must be set to DAI,
         # as the chainlink price feed returns the ETH amount for 1DAI
         return make_initialize_args(
-            sell_token=dai_token_address, buy_token=weth_token_address, price_feed=chainlink_dai_eth, max_margin=max_margin, const_price=0
+            receiver=receiver, sell_token=dai_token_address, buy_token=weth_token_address, price_feed=chainlink_dai_eth, max_margin=max_margin, const_price=0
         )
 
     return run
@@ -188,8 +187,8 @@ def createSellerInitializeArgs():
 @pytest.fixture(scope="module")
 def deploy_seller_eth_for_dai(accounts, deployRegistryConstructorArgs, createSellerInitializeArgs):
     def run(receiver, max_margin):
-        registryConstructorArgs = deployRegistryConstructorArgs(receiver)
-        sellerInitializeArgs = createSellerInitializeArgs(max_margin)
+        registryConstructorArgs = deployRegistryConstructorArgs()
+        sellerInitializeArgs = createSellerInitializeArgs(receiver, max_margin)
         registry = deploy_registry({"from": accounts[0]}, registryConstructorArgs)
         seller = deploy_seller({"from": accounts[0]}, sellerInitializeArgs, registry.address)
         return (registry, seller)
