@@ -13,7 +13,7 @@ import {LibTokenPair} from "./lib/LibTokenPair.sol";
 import {IGPv2Settlement} from "./interfaces/IGPv2Settlement.sol";
 import {IWETH} from "./interfaces/IWETH.sol";
 import {IVault} from "./interfaces/IVault.sol";
-// import {IOTCRegistry} from "./interfaces/IOTCRegistry.sol";
+// import {IOTCFactory} from "./interfaces/IOTCFactory.sol";
 import {IChainlinkPriceFeedV3} from "./interfaces/IChainlinkPriceFeedV3.sol";
 
 contract OTCSeller is Initializable, AssetRecoverer {
@@ -38,7 +38,7 @@ contract OTCSeller is Initializable, AssetRecoverer {
     /// Lido Agent (Vault) address
     address public immutable DAO_VAULT;
 
-    address public immutable registry;
+    address public immutable factory;
 
     address public beneficiary;
     address public tokenA;
@@ -58,11 +58,11 @@ contract OTCSeller is Initializable, AssetRecoverer {
         require(wethAddress != address(0) && daoVaultAddress != address(0), "Zero address");
         WETH = wethAddress;
         DAO_VAULT = daoVaultAddress;
-        registry = msg.sender;
+        factory = msg.sender;
     }
 
-    modifier onlyRegistry() {
-        require(msg.sender == registry, "Only registry can call");
+    modifier onlyFactory() {
+        require(msg.sender == factory, "Only factory can call");
         _;
     }
 
@@ -81,7 +81,7 @@ contract OTCSeller is Initializable, AssetRecoverer {
         address priceFeed,
         uint16 maxMargin,
         uint256 constantPrice
-    ) external initializer onlyRegistry {
+    ) external initializer onlyFactory {
         /// @notice contract works only with ERC20 compatible tokens
         require(_tokenA != address(0) && _tokenB != address(0) && _beneficiary != address(0), "Zero address");
         require(_tokenA != _tokenB, "tokenA and tokenB must be different");
@@ -279,7 +279,7 @@ contract OTCSeller is Initializable, AssetRecoverer {
 
     function _getPriceAndMaxMargin(address sellToken, address buyToken) internal view returns (uint256 price, uint16 maxMargin) {
         (address token0, address token1) = LibTokenPair.sortTokens(sellToken, buyToken);
-        // (price, maxMargin) = IOTCRegistry(registry).getPriceAndMaxMargin(sellToken, buyToken);
+        // (price, maxMargin) = IOTCFactory(factory).getPriceAndMaxMargin(sellToken, buyToken);
         PairConfig memory config = _pairConfig;
         require(config.priceFeed != address(0) || config.constantPrice != 0, "Pair config not set");
 

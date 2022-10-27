@@ -7,7 +7,7 @@ import {Clones} from "./lib/Clones.sol";
 import {LibTokenPair} from "./lib/LibTokenPair.sol";
 import {IChainlinkPriceFeedV3} from "./interfaces/IChainlinkPriceFeedV3.sol";
 
-contract OTCRegistry {
+contract OTCFactory {
     event SellerCreated(address indexed token0, address indexed token1, address indexed beneficiary, address pair);
 
     address public immutable implementation;

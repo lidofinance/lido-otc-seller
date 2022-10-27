@@ -4,7 +4,7 @@ import utils.log as log
 from utils.cow import KIND_SELL, BALANCE_ERC20
 
 try:
-    from brownie import OTCSeller, OTCRegistry, interface, Wei
+    from brownie import OTCSeller, OTCFactory, interface, Wei
 except ImportError:
     print("You're probably running inside Brownie console. Please call:")
     print("set_console_globals(interface=interface, PurchaseExecutor=PurchaseExecutor)")
@@ -82,42 +82,42 @@ def make_initialize_args(receiver, sell_token, buy_token, price_feed, max_margin
     )
 
 
-def make_registry_constructor_args(weth_token, dao_vault):
+def make_factory_constructor_args(weth_token, dao_vault):
     return DotMap({"wethAddress": weth_token, "daoVaultAddress": dao_vault})
 
 
-def deploy_registry(tx_params, sellerInitializeArgs):
+def deploy_factory(tx_params, sellerInitializeArgs):
     deployedState = read_or_update_state()
 
-    if deployedState.registryAddress:
-        registry = OTCRegistry.at(deployedState.registryAddress)
-        log.warn("OTCRegistry already deployed at", deployedState.registryAddress)
+    if deployedState.factoryAddress:
+        factory = OTCFactory.at(deployedState.factoryAddress)
+        log.warn("OTCFactory already deployed at", deployedState.factoryAddress)
     else:
-        log.info("Deploying OTCRegistry...")
+        log.info("Deploying OTCFactory...")
         args = DotMap(sellerInitializeArgs)
-        registry = OTCRegistry.deploy(
+        factory = OTCFactory.deploy(
             args.wethAddress,
             args.daoVaultAddress,
             tx_params,
         )
-        log.info("> txHash:", registry.tx.txid)
-        implementationAddress = registry.implementation()
+        log.info("> txHash:", factory.tx.txid)
+        implementationAddress = factory.implementation()
         deployedState = read_or_update_state(
             {
                 "deployer": tx_params["from"].address,
-                "registryDeployTx": registry.tx.txid,
-                "registryAddress": registry.address,
-                "registryDeployConstructorArgs": args.toDict(),
+                "factoryDeployTx": factory.tx.txid,
+                "factoryAddress": factory.address,
+                "factoryDeployConstructorArgs": args.toDict(),
                 "implementationAddress": implementationAddress,
             }
         )
-        log.okay("OTCRegistry deployed at", registry.address)
+        log.okay("OTCFactory deployed at", factory.address)
 
-        log.info("Checking deployed OTCRegistry...")
-        check_deployed_registry(registry=registry, registryConstructorArgs=args)
-        log.okay("OTCRegistry check pass")
+        log.info("Checking deployed OTCFactory...")
+        check_deployed_factory(factory=factory, factoryConstructorArgs=args)
+        log.okay("OTCFactory check pass")
 
-    return registry
+    return factory
 
 
 def find_deployed_seller_index(sellers, sellerAddress):
@@ -134,18 +134,18 @@ def get_token_data(tokenAddress):
     return (token, symbol, decimals)
 
 
-def deploy_seller(tx_params, sellerInitializeArgs, registryAddress=None):
+def deploy_seller(tx_params, sellerInitializeArgs, factoryAddress=None):
     deployedState = read_or_update_state()
-    if not registryAddress:
-        if not deployedState.registryAddress:
-            log.error("Registry is not defined/deployed")
+    if not factoryAddress:
+        if not deployedState.factoryAddress:
+            log.error("Factory is not defined/deployed")
             exit()
-        registryAddress = deployedState.registryAddress
-    registry = OTCRegistry.at(registryAddress)
-    log.info(f"Using registry at", registryAddress)
+        factoryAddress = deployedState.factoryAddress
+    factory = OTCFactory.at(factoryAddress)
+    log.info(f"Using factory at", factoryAddress)
 
     args = DotMap(sellerInitializeArgs)
-    sellerAddress = registry.getSellerFor(args.beneficiaryAddress, args.sellTokenAddress, args.buyTokenAddress)
+    sellerAddress = factory.getSellerFor(args.beneficiaryAddress, args.sellTokenAddress, args.buyTokenAddress)
     sellers = deployedState.sellers or []
     sellerIndex = find_deployed_seller_index(sellers, sellerAddress)
     if sellerIndex == -1:
@@ -157,12 +157,12 @@ def deploy_seller(tx_params, sellerInitializeArgs, registryAddress=None):
 
     [_, sellTokenASymbol, _] = get_token_data(args.sellTokenAddress)
     [_, buyTokenBSymbol, _] = get_token_data(args.buyTokenAddress)
-    if registry.isSellerExists(sellerAddress):
+    if factory.isSellerExists(sellerAddress):
         log.warn(f"Seller for {sellTokenASymbol}:{buyTokenBSymbol} already deployed at", sellerAddress)
     else:
         log.info("Deploying OTCSeller for tokens pair", f"{sellTokenASymbol}:{buyTokenBSymbol}")
 
-        tx = registry.createSeller(
+        tx = factory.createSeller(
             args.beneficiaryAddress,
             args.sellTokenAddress,
             args.buyTokenAddress,
@@ -179,7 +179,7 @@ def deploy_seller(tx_params, sellerInitializeArgs, registryAddress=None):
     seller = OTCSeller.at(sellerAddress)
 
     log.info("Checking deployed OTCSeller...")
-    check_deployed_seller(registry=registry, seller=seller, sellerInitializeArgs=args)
+    check_deployed_seller(factory=factory, seller=seller, sellerInitializeArgs=args)
     log.okay("OTCSeller check pass")
 
     log.info("Updating seller deployed info...")
@@ -204,30 +204,30 @@ def deploy_seller(tx_params, sellerInitializeArgs, registryAddress=None):
     return seller
 
 
-# def deploy(tx_params, registryConstructorArgs, sellerInitializeArgs):
-#     registry = deploy_registry(tx_params, registryConstructorArgs)
+# def deploy(tx_params, factoryConstructorArgs, sellerInitializeArgs):
+#     factory = deploy_factory(tx_params, factoryConstructorArgs)
 #     seller = deploy_seller(tx_params, sellerInitializeArgs)
-#     return (registry, seller)
+#     return (factory, seller)
 
 
-def check_deployed_registry(registry, registryConstructorArgs):
-    impl = OTCSeller.at(registry.implementation())
-    assert impl.DAO_VAULT() == registryConstructorArgs.daoVaultAddress, "Wrong Lido Agent address"
-    assert impl.WETH() == registryConstructorArgs.wethAddress, "Wrong WETH address"
+def check_deployed_factory(factory, factoryConstructorArgs):
+    impl = OTCSeller.at(factory.implementation())
+    assert impl.DAO_VAULT() == factoryConstructorArgs.daoVaultAddress, "Wrong Lido Agent address"
+    assert impl.WETH() == factoryConstructorArgs.wethAddress, "Wrong WETH address"
 
 
-def check_deployed_seller(registry, seller, sellerInitializeArgs):
-    assert registry.isSellerExists(seller.address) == True, "Incorrect seller deploy"
+def check_deployed_seller(factory, seller, sellerInitializeArgs):
+    assert factory.isSellerExists(seller.address) == True, "Incorrect seller deploy"
     assert (
-        registry.getSellerFor(sellerInitializeArgs.beneficiaryAddress, sellerInitializeArgs.sellTokenAddress, sellerInitializeArgs.buyTokenAddress)
+        factory.getSellerFor(sellerInitializeArgs.beneficiaryAddress, sellerInitializeArgs.sellTokenAddress, sellerInitializeArgs.buyTokenAddress)
         == seller.address
     ), "Incorrect seller deploy"
     assert (
-        registry.getSellerFor(sellerInitializeArgs.beneficiaryAddress, sellerInitializeArgs.buyTokenAddress, sellerInitializeArgs.sellTokenAddress)
+        factory.getSellerFor(sellerInitializeArgs.beneficiaryAddress, sellerInitializeArgs.buyTokenAddress, sellerInitializeArgs.sellTokenAddress)
         == seller.address
     ), "Incorrect seller deploy"
 
-    impl = OTCSeller.at(registry.implementation())
+    impl = OTCSeller.at(factory.implementation())
 
     assert seller.DAO_VAULT() == impl.DAO_VAULT(), "Wrong Lido Agent address on seller"
     assert seller.WETH() == impl.WETH(), "Wrong WETH address on seller"

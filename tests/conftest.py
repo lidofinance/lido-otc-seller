@@ -3,9 +3,9 @@ import pytest
 from brownie import chain, web3
 import utils.log as log
 from scripts.deploy import (
-    deploy_registry,
+    deploy_factory,
     deploy_seller,
-    make_registry_constructor_args,
+    make_factory_constructor_args,
     start_dao_vote_transfer_eth_for_sell,
     make_order,
     make_initialize_args,
@@ -161,9 +161,9 @@ def beneficiary(accounts):
 
 
 @pytest.fixture(scope="module")
-def deployRegistryConstructorArgs():
+def deployFactoryConstructorArgs():
     def run():
-        return make_registry_constructor_args(
+        return make_factory_constructor_args(
             weth_token=weth_token_address,
             dao_vault=lido_dao_agent_address,
         )
@@ -185,13 +185,13 @@ def createSellerInitializeArgs():
 
 
 @pytest.fixture(scope="module")
-def deploy_seller_eth_for_dai(accounts, deployRegistryConstructorArgs, createSellerInitializeArgs):
+def deploy_seller_eth_for_dai(accounts, deployFactoryConstructorArgs, createSellerInitializeArgs):
     def run(receiver, max_margin):
-        registryConstructorArgs = deployRegistryConstructorArgs()
+        factoryConstructorArgs = deployFactoryConstructorArgs()
         sellerInitializeArgs = createSellerInitializeArgs(receiver, max_margin)
-        registry = deploy_registry({"from": accounts[0]}, registryConstructorArgs)
-        seller = deploy_seller({"from": accounts[0]}, sellerInitializeArgs, registry.address)
-        return (registry, seller)
+        factory = deploy_factory({"from": accounts[0]}, factoryConstructorArgs)
+        seller = deploy_seller({"from": accounts[0]}, sellerInitializeArgs, factory.address)
+        return (factory, seller)
 
     return run
 

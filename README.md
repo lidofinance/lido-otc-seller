@@ -4,14 +4,14 @@ The OTC Seller is used to exchange one asset from the [DAO Treasury](https://mai
 
 ## Description
 
-The `OTCRegistry` and  `OTCSeller` contracts are non-upgradable, and its params supposed to be set upon the construction stage:
+The `OTCFactory` and  `OTCSeller` contracts are non-upgradable, and its params supposed to be set upon the construction stage:
 
 - ERC-20 trading pair (or native ether)
 - Owner (beneficiary)
 - ChainLink price feed
 - Spot price margin
 
-The OTCRegistry facilitates the deployments of OTCSeller instances covering different trading scenarios.
+The OTCFactory facilitates the deployments of OTCSeller instances covering different trading scenarios.
 
 > *NB:* Due to the CowSwap exchange logic, it is necessary to place an order via CowSwap API with an additional toolkit before before or at the moment of order settle.
 
@@ -68,13 +68,13 @@ Make sure you have exported or set id directly:
 DEPLOYER=deployer # deployer account alias
 ```
 
-To deploy OTCRegistry run deploy script and follow the wizard:
+To deploy OTCFactory run deploy script and follow the wizard:
 
 ```shell
-DEPLOYER=deployer brownie run --network mainnet main deployRegistry
+DEPLOYER=deployer brownie run --network mainnet main deployFactory
 ```
 
-At the deploy moment `deployer` account becomes the `OTCRegistry` owner. The owner can be changed by calling the `transferOwnership` method (e.g., to transfer ownership to the DAO agent)
+Deploy of the `OTCSeller` is permissionless, any account can deploy a seller for a specific token pair and beneficiary. It is not possible to redeploy a seller for the same combination of tokens and beneficiary.
 
 After script finishes, all deployed metadata will be saved to file `./deployed-{NETWORK}.json`, i.e. `deployed-mainnet.json`.
 
@@ -82,7 +82,7 @@ Deploy script is stateful, so it safe to start several times. To deploy from scr
 
 ### Deploying additional seller for other tokens
 
-`OTCRegistry` allows to have multiple sellers for different token pairs. To deploy additional seller run the next command and follow the wizard:
+`OTCFactory` allows to have multiple sellers for different token pairs. To deploy additional seller run the next command and follow the wizard:
 
 ```shell
 DEPLOYER=deployer brownie run --network mainnet main deploySeller <sellTokenAddress> <buyTokenAddress> <priceFeedAddress> [<beneficiaryAddress = BENEFICIARY>] [<maxMargin = MAX_MARGIN>] [<constantPrice = CONST_PRICE>]
@@ -114,7 +114,7 @@ export PRICE_FEED = "0x773616E4d11A78F511299002da57A0a94577F1f4"
 DEPLOYER=deployer brownie run --network mainnet main deploySeller $SELL_TOKEN $BUY_TOKEN $PRICE_FEED
 ```
 
-At the deploy moment `deployer` account must be an `OTCRegistry` owner. In case when ownership is transferred to DAO Agent, transaction should be executed during the Voting execution phase (on behalf DAO Agent).
+At the deploy moment `deployer` account must be an `OTCFactory` owner. In case when ownership is transferred to DAO Agent, transaction should be executed during the Voting execution phase (on behalf DAO Agent).
 
 After script finishes, all deployed metadata will be saved to file `./deployed-{NETWORK}.json`, i.e. `deployed-mainnet.json`.
 

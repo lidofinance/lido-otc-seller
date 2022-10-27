@@ -14,20 +14,20 @@ def sell_amount():
 
 
 @pytest.fixture
-def registry_and_seller(deploy_seller_eth_for_dai):
+def factory_and_seller(deploy_seller_eth_for_dai):
     return deploy_seller_eth_for_dai(receiver=lido_dao_agent_address, max_margin=MAX_MARGIN)
 
 
 @pytest.fixture
-def seller(registry_and_seller):
-    (_, seller) = registry_and_seller
+def seller(factory_and_seller):
+    (_, seller) = factory_and_seller
     return seller
 
 
 @pytest.fixture
-def registry(registry_and_seller):
-    (registry, _) = registry_and_seller
-    return registry
+def factory(factory_and_seller):
+    (factory, _) = factory_and_seller
+    return factory
 
 
 @pytest.fixture

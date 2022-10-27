@@ -1,5 +1,5 @@
 from datetime import datetime
-from brownie import chain, network, accounts, interface, OTCSeller, OTCRegistry
+from brownie import chain, network, accounts, interface, OTCSeller, OTCFactory
 from brownie.utils import color
 from utils.cow import api_create_order, api_get_order_status, api_get_sell_fee
 from utils.deployed_state import read_or_update_state
@@ -7,12 +7,12 @@ from utils.env import get_env
 from utils.helpers import formatUnit, parseUnit
 import utils.log as log
 from scripts.deploy import (
-    deploy_registry,
+    deploy_factory,
     deploy_seller,
     get_token_data,
     make_initialize_args,
     make_order,
-    make_registry_constructor_args,
+    make_factory_constructor_args,
 )
 from utils.config import weth_token_address, lido_dao_agent_address
 from otc_seller_config import BENEFICIARY, MAX_MARGIN, CONST_PRICE
@@ -74,8 +74,8 @@ def showTokensPrice(sellTokenAddress, buyTokenAddress, priceFeedAddress):
     log.note(f"Price for 1{buyTokenSymbol}", f"{formatUnit(reverseAmount, sellTokenDecimals)}{sellTokenSymbol}")
 
 
-def deployRegistry():
-    log.info("-= OTCRegistry deploy =-")
+def deployFactory():
+    log.info("-= OTCFactory deploy =-")
 
     checkEnv()
     deployer = loadAccount("DEPLOYER")
@@ -83,9 +83,9 @@ def deployRegistry():
     log.note("NETWORK", network.show_active())
     log.note("DEPLOYER", deployer.address)
 
-    regArgs = make_registry_constructor_args(weth_token=weth_token_address, dao_vault=lido_dao_agent_address)
+    regArgs = make_factory_constructor_args(weth_token=weth_token_address, dao_vault=lido_dao_agent_address)
 
-    log.info("> registryConstructorArgs:")
+    log.info("> factoryConstructorArgs:")
     for k, v in regArgs.items():
         log.note(k, v)
 
@@ -102,14 +102,14 @@ def deployRegistry():
 
     proceedPrompt()
 
-    log.note(f"OTCRegistry deploy")
-    registry = deploy_registry({"from": deployer}, regArgs)
+    log.note(f"OTCFactory deploy")
+    factory = deploy_factory({"from": deployer}, regArgs)
 
     if network.show_active() == "mainnet":
         proceed = log.prompt_yes_no("(Re)Try to publish source codes?")
         if proceed:
-            OTCRegistry.publish_source(registry)
-            OTCSeller.publish_source(registry.implementation())
+            OTCFactory.publish_source(factory)
+            OTCSeller.publish_source(factory.implementation())
             log.okay("Contract source published!")
     else:
         log.info(f"The current network '{network.show_active()}' is not 'mainnet'. Source publication skipped")
@@ -156,14 +156,14 @@ def signOrder(sellTokenAddress, buyTokenAddress, sellAmount, validPeriod=3600, b
     txExecutor = loadAccount("EXECUTOR")
 
     deployedState = read_or_update_state()
-    if not deployedState.registryAddress:
-        log.error("Registry not defined/deployed")
+    if not deployedState.factoryAddress:
+        log.error("Factory not defined/deployed")
         exit()
-    registry = OTCRegistry.at(deployedState.registryAddress)
-    log.info(f"Using registry at", registry.address)
+    factory = OTCFactory.at(deployedState.factoryAddress)
+    log.info(f"Using factory at", factory.address)
 
-    sellerAddress = registry.getSellerFor(beneficiaryAddress, sellTokenAddress, buyTokenAddress)
-    if not registry.isSellerExists(sellerAddress):
+    sellerAddress = factory.getSellerFor(beneficiaryAddress, sellTokenAddress, buyTokenAddress)
+    if not factory.isSellerExists(sellerAddress):
         log.error(f"Seller for pair {sellTokenAddress}:{buyTokenAddress} is not defined/deployed")
         exit()
     log.info(f"Using OTCSeller at", sellerAddress)
@@ -198,7 +198,7 @@ def signOrder(sellTokenAddress, buyTokenAddress, sellAmount, validPeriod=3600, b
     log.note("txExecutor", txExecutor)
 
     log.info(f"{color('bright red')}!!! Check min buy amount for correctness !!!")
-    [price, maxMargin] = registry.getPriceAndMaxMargin(sellTokenAddress, buyTokenAddress)
+    [price, maxMargin] = factory.getPriceAndMaxMargin(sellTokenAddress, buyTokenAddress)
     buyAmount = ((sellAmount * price * (10000 - maxMargin)) // 10000) // (10 ** (18 + sellTokenDecimals - buyTokenDecimals))
     log.note("Sell amount", f"{formatUnit(sellAmount, sellTokenDecimals)}{sellTokenSymbol}")
     log.note("Min buy amount", f"{formatUnit(buyAmount, buyTokenDecimals)}{buyTokenSymbol}")

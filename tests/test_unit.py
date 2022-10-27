@@ -1,6 +1,6 @@
 import pytest
 from brownie import chain, reverts, Wei, OTCSeller
-from scripts.deploy import check_deployed_registry, check_deployed_seller, make_order
+from scripts.deploy import check_deployed_factory, check_deployed_seller, make_order
 
 from utils.config import lido_dao_agent_address, cowswap_vault_relayer, PRE_SIGNED
 from otc_seller_config import MAX_MARGIN
@@ -14,20 +14,20 @@ def sell_amount():
 
 
 @pytest.fixture
-def registry_and_seller(beneficiary, deploy_seller_eth_for_dai):
+def factory_and_seller(beneficiary, deploy_seller_eth_for_dai):
     return deploy_seller_eth_for_dai(receiver=beneficiary, max_margin=MAX_MARGIN)
 
 
 @pytest.fixture
-def seller(registry_and_seller):
-    (_, seller) = registry_and_seller
+def seller(factory_and_seller):
+    (_, seller) = factory_and_seller
     return seller
 
 
 @pytest.fixture
-def registry(registry_and_seller):
-    (registry, _) = registry_and_seller
-    return registry
+def factory(factory_and_seller):
+    (factory, _) = factory_and_seller
+    return factory
 
 
 @pytest.fixture
@@ -74,28 +74,28 @@ def signed_order(accounts, seller, beneficiary, sell_amount, make_order_sell_wet
     return (order, orderUid, tx)
 
 
-def test_deploy_params(registry, seller, beneficiary, deployRegistryConstructorArgs, createSellerInitializeArgs):
-    regArgs = deployRegistryConstructorArgs()
+def test_deploy_params(factory, seller, beneficiary, deployFactoryConstructorArgs, createSellerInitializeArgs):
+    regArgs = deployFactoryConstructorArgs()
     args = createSellerInitializeArgs(receiver=beneficiary, max_margin=MAX_MARGIN)
-    check_deployed_registry(registry=registry, registryConstructorArgs=regArgs)
-    check_deployed_seller(registry=registry, seller=seller, sellerInitializeArgs=args)
+    check_deployed_factory(factory=factory, factoryConstructorArgs=regArgs)
+    check_deployed_seller(factory=factory, seller=seller, sellerInitializeArgs=args)
 
 
-def test_initialize(accounts, registry, seller):
+def test_initialize(accounts, factory, seller):
     dummyAddress = "0x0000000000000000000000000000000000000001"
-    impl = OTCSeller.at(registry.implementation())
+    impl = OTCSeller.at(factory.implementation())
     # try initialize impl
-    with reverts("Only registry can call"):
+    with reverts("Only factory can call"):
         impl.initialize(dummyAddress, dummyAddress, dummyAddress, dummyAddress, 1, 1, {"from": accounts[0]})
     # retry initialize
     with reverts("Initializable: contract is already initialized"):
         seller.initialize(dummyAddress, dummyAddress, dummyAddress, dummyAddress, 1, 1, {"from": accounts[0]})
 
 
-def test_retry_deploy_same_tokens(accounts, registry, beneficiary, createSellerInitializeArgs):
+def test_retry_deploy_same_tokens(accounts, factory, beneficiary, createSellerInitializeArgs):
     args = createSellerInitializeArgs(receiver=beneficiary, max_margin=MAX_MARGIN)
     with reverts("Seller exists"):
-        registry.createSeller(
+        factory.createSeller(
             args.beneficiaryAddress,
             args.sellTokenAddress,
             args.buyTokenAddress,
@@ -107,7 +107,7 @@ def test_retry_deploy_same_tokens(accounts, registry, beneficiary, createSellerI
 
     # swap tokens
     with reverts("Seller exists"):
-        registry.createSeller(
+        factory.createSeller(
             args.beneficiaryAddress,
             args.buyTokenAddress,
             args.sellTokenAddress,
@@ -126,7 +126,7 @@ def test_get_chainlink_price_and_max_margin(seller):
     assert max_margin == MAX_MARGIN
 
 
-def test_check_wrong_order(registry, seller, sell_amount, beneficiary, weth_token, dai_token, app_data):
+def test_check_wrong_order(factory, seller, sell_amount, beneficiary, weth_token, dai_token, app_data):
 
     dummyAddress = "0x0000000000000000000000000000000000000001"
 
