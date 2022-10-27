@@ -9,11 +9,12 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 
 import {GPv2Order} from "./lib/GPv2Order.sol";
 import {AssetRecoverer} from "./lib/AssetRecoverer.sol";
-
+import {LibTokenPair} from "./lib/LibTokenPair.sol";
 import {IGPv2Settlement} from "./interfaces/IGPv2Settlement.sol";
 import {IWETH} from "./interfaces/IWETH.sol";
 import {IVault} from "./interfaces/IVault.sol";
-import {IOTCRegistry} from "./interfaces/IOTCRegistry.sol";
+// import {IOTCRegistry} from "./interfaces/IOTCRegistry.sol";
+import {IChainlinkPriceFeedV3} from "./interfaces/IChainlinkPriceFeedV3.sol";
 
 contract OTCSeller is Initializable, AssetRecoverer {
     using SafeERC20 for IERC20;
@@ -28,6 +29,7 @@ contract OTCSeller is Initializable, AssetRecoverer {
     address public constant GP_V2_SETTLEMENT = 0x9008D19f58AAbD9eD0D60971565AA8510560ab41;
 
     // events
+    event PairConfigSet(address indexed token0, address indexed token1, PairConfig config);
     event OrderSigned(address indexed caller, bytes orderUid, address sellToken, address buyToken, uint256 sellAmount, uint256 buyAmount);
     event OrderCanceled(address indexed caller, bytes orderUid);
 
@@ -42,6 +44,16 @@ contract OTCSeller is Initializable, AssetRecoverer {
     address public tokenA;
     address public tokenB;
 
+    struct PairConfig {
+        address priceFeed;
+        // The maximum allowable spot price margin that can be set, in BPS
+        uint16 maxMargin; // e.g. 200 = 2%
+        bool reverse;
+        uint256 constantPrice;
+    }
+
+    PairConfig private _pairConfig;
+
     constructor(address wethAddress, address daoVaultAddress) {
         require(wethAddress != address(0) && daoVaultAddress != address(0), "Zero address");
         WETH = wethAddress;
@@ -54,13 +66,21 @@ contract OTCSeller is Initializable, AssetRecoverer {
         _;
     }
 
+    modifier onlyBeneficiary() {
+        require(msg.sender == beneficiary, "Only beneficiary can call");
+        _;
+    }
+
     /// @notice sellToken and buyToken mast be set in order according chainlink price feed
     ///         i.e., in the case of selling ETH for DAI, the sellToken must be set to DAI,
     ///         as the chainlink price feed returns the ETH amount for 1DAI
     function initialize(
         address _beneficiary,
         address _tokenA,
-        address _tokenB
+        address _tokenB,
+        address priceFeed,
+        uint16 maxMargin,
+        uint256 constantPrice
     ) external initializer onlyRegistry {
         /// @notice contract works only with ERC20 compatible tokens
         require(_tokenA != address(0) && _tokenB != address(0) && _beneficiary != address(0), "Zero address");
@@ -69,6 +89,8 @@ contract OTCSeller is Initializable, AssetRecoverer {
         beneficiary = _beneficiary;
         tokenA = _tokenA;
         tokenB = _tokenB;
+
+        _setPairConfig(priceFeed, maxMargin, constantPrice);
     }
 
     /// @dev allow contract to receive ETH
@@ -81,6 +103,18 @@ contract OTCSeller is Initializable, AssetRecoverer {
 
     fallback() external {
         revert();
+    }
+
+    function getPairConfig() external view returns (PairConfig memory) {
+        return _pairConfig;
+    }
+
+    function setPairConfig(
+        address priceFeed,
+        uint16 maxMargin,
+        uint256 constantPrice
+    ) external onlyBeneficiary {
+        _setPairConfig(priceFeed, maxMargin, constantPrice);
     }
 
     function priceAndMaxMargin() external view returns (uint256 price, uint16 maxMargin) {
@@ -244,8 +278,51 @@ contract OTCSeller is Initializable, AssetRecoverer {
     }
 
     function _getPriceAndMaxMargin(address sellToken, address buyToken) internal view returns (uint256 price, uint16 maxMargin) {
-        (price, maxMargin) = IOTCRegistry(registry).getPriceAndMaxMargin(sellToken, buyToken);
+        (address token0, address token1) = LibTokenPair.sortTokens(sellToken, buyToken);
+        // (price, maxMargin) = IOTCRegistry(registry).getPriceAndMaxMargin(sellToken, buyToken);
+        PairConfig memory config = _pairConfig;
+        require(config.priceFeed != address(0) || config.constantPrice != 0, "Pair config not set");
+
+        maxMargin = config.maxMargin;
+
+        // if the requested tokens order is opposite to sorted order and in the same time
+        // the priceFeed is also match the reverse sorted order, return direct (not reverse) price
+        bool reverse = (token0 != sellToken) != config.reverse;
+
+        // constantPrice has priority
+        if (config.constantPrice > 0) {
+            price = reverse ? 10**36 / config.constantPrice : config.constantPrice;
+        } else {
+            // get Chainlink price
+            price = _getChainlinkPrice(config.priceFeed, reverse);
+        }
         require(price > 0, "price not defined");
         require(maxMargin > 0, "maxMargin not defined");
+    }
+
+    /// @dev Returns the normalized price from Chainlink price feed
+    function _getChainlinkPrice(address priceFeed, bool reverse) internal view returns (uint256) {
+        IChainlinkPriceFeedV3 _priceFeed = IChainlinkPriceFeedV3(priceFeed);
+        uint256 decimals = _priceFeed.decimals();
+        (, int256 price, , uint256 updatedAt, ) = _priceFeed.latestRoundData();
+        require(updatedAt != 0, "Unexpected price feed answer");
+        // normilize chainlink price to 18 decimals
+        return reverse ? (10**(18 + decimals)) / uint256(price) : uint256(price) * (10**(18 - decimals));
+    }
+
+    function _setPairConfig(
+        address priceFeed,
+        uint16 maxMargin,
+        uint256 constantPrice
+    ) internal {
+        require(priceFeed != address(0) || constantPrice > 0, "either priceFeed or constantPrice is required");
+        require(maxMargin > 0 && maxMargin <= 500, "maxMargin too high or not set");
+        (address token0, address token1) = LibTokenPair.sortTokens(tokenA, tokenB);
+
+        bool reverse = token0 != tokenA;
+        PairConfig memory config = PairConfig(priceFeed, maxMargin, reverse, constantPrice);
+
+        _pairConfig = config;
+        emit PairConfigSet(token0, token1, config);
     }
 }

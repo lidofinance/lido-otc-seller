@@ -86,10 +86,10 @@ def test_initialize(accounts, registry, seller):
     impl = OTCSeller.at(registry.implementation())
     # try initialize impl
     with reverts("Only registry can call"):
-        impl.initialize(dummyAddress, dummyAddress, dummyAddress, {"from": accounts[0]})
+        impl.initialize(dummyAddress, dummyAddress, dummyAddress, dummyAddress, 1, 1, {"from": accounts[0]})
     # retry initialize
     with reverts("Initializable: contract is already initialized"):
-        seller.initialize(dummyAddress, dummyAddress, dummyAddress, {"from": accounts[0]})
+        seller.initialize(dummyAddress, dummyAddress, dummyAddress, dummyAddress, 1, 1, {"from": accounts[0]})
 
 
 def test_retry_deploy_same_tokens(accounts, registry, beneficiary, createSellerInitializeArgs):

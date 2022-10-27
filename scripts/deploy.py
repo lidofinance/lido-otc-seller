@@ -144,11 +144,6 @@ def deploy_seller(tx_params, sellerInitializeArgs, registryAddress=None):
     registry = OTCRegistry.at(registryAddress)
     log.info(f"Using registry at", registryAddress)
 
-    owner = registry.owner()
-    if owner != tx_params["from"]:
-        log.error("Deployer is not registry owner! If the owner is DAO Agent, this action should be performed as part of the voting execution")
-        exit()
-
     args = DotMap(sellerInitializeArgs)
     sellerAddress = registry.getSellerFor(args.beneficiaryAddress, args.sellTokenAddress, args.buyTokenAddress)
     sellers = deployedState.sellers or []
@@ -188,7 +183,7 @@ def deploy_seller(tx_params, sellerInitializeArgs, registryAddress=None):
     log.okay("OTCSeller check pass")
 
     log.info("Updating seller deployed info...")
-    [priceFeed, maxMargin, _, constantPrice] = registry.getPairConfig(args.sellTokenAddress, args.buyTokenAddress)
+    [priceFeed, maxMargin, _, constantPrice] = seller.getPairConfig()
     sellerInfo.pairConfig = {
         "chainLinkPriceFeedAddress": priceFeed,
         "maxMargin": maxMargin,
@@ -240,10 +235,10 @@ def check_deployed_seller(registry, seller, sellerInitializeArgs):
     assert seller.tokenA() == sellerInitializeArgs.sellTokenAddress, "Wrong sellToken address"
     assert seller.tokenB() == sellerInitializeArgs.buyTokenAddress, "Wrong buyToken address"
 
-    (priceFeed, maxMargin, reverse, constPrice) = registry.getPairConfig(sellerInitializeArgs.sellTokenAddress, sellerInitializeArgs.buyTokenAddress)
-
+    (priceFeed, maxMargin, _, constPrice) = seller.getPairConfig()
     assert priceFeed == sellerInitializeArgs.chainLinkPriceFeedAddress, "Wrong ChainLink price feed address"
     assert maxMargin == sellerInitializeArgs.maxMargin, "Wrong max priceMargin"
+    assert constPrice == sellerInitializeArgs.constantPrice, "Wrong max constantPrice"
 
 
 def start_dao_vote_transfer_eth_for_sell(tx_params, seller_address, sell_amount):
